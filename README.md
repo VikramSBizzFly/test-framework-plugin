@@ -3,7 +3,7 @@
 ## Install
 
 ```
-/plugin marketplace add vikrambizzfly/test-framework-plugin
+/plugin marketplace add VikramSBizzFly/test-framework-plugin
 /plugin install test-framework@test-framework
 ```
 
