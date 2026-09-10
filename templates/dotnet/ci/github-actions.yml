@@ -1,0 +1,37 @@
+# Opt-in CI for Tier 1/2 .NET projects. Copied in, never auto-enabled --
+# commit it yourself once you're ready for the native suite to run in CI.
+name: test-framework (native)
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  native-suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - run: dotnet build
+      - run: pwsh bin/Debug/net8.0/playwright.ps1 install --with-deps
+
+      # Credentials come from repo/environment secrets, never from a
+      # committed tests/credentials.json.
+      - run: dotnet test --logger "junit;LogFilePath=../../../tests/results/junit.xml"
+        env:
+          BASE_URL: ${{ secrets.TEST_BASE_URL }}
+
+      - if: always()
+        run: dotnet tests/JunitToCsv.cs tests/results/junit.xml tests/results/run-${{ github.run_id }}.csv
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            tests/results/*.csv
+            tests/results/junit.xml

@@ -1,0 +1,36 @@
+# Opt-in CI for Tier 1/2 Java projects. Copied in, never auto-enabled --
+# commit it yourself once you're ready for the native suite to run in CI.
+name: test-framework (native)
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  native-suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - run: mvn -q -DskipTests install com.microsoft.playwright:playwright:install
+      # Credentials come from repo/environment secrets, never from a
+      # committed tests/credentials.json.
+      - run: mvn -q test
+        env:
+          BASE_URL: ${{ secrets.TEST_BASE_URL }}
+
+      - if: always()
+        run: java tests/JunitToCsv.java target/surefire-reports/TEST-*.xml tests/results/run-${{ github.run_id }}.csv
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            tests/results/*.csv
+            target/surefire-reports/**

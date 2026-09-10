@@ -1,0 +1,11 @@
+{
+  "name": "test-framework",
+  "owner": { "name": "rahul" },
+  "plugins": [
+    {
+      "name": "test-framework",
+      "source": "./",
+      "description": "Claude-native QA framework: discovers routes, generates CSV test cases, executes them via curl and the Playwright MCP."
+    }
+  ]
+}

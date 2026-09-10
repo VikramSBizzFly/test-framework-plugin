@@ -1,0 +1,37 @@
+# Opt-in CI for Tier 1/2 Python projects. Copied in, never auto-enabled --
+# commit it yourself once you're ready for the native suite to run in CI.
+name: test-framework (native)
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  native-suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+      - run: playwright install --with-deps
+
+      # Credentials come from repo/environment secrets, never from a
+      # committed tests/credentials.json.
+      - run: pytest tests/specs --junitxml=tests/results/junit.xml
+        env:
+          BASE_URL: ${{ secrets.TEST_BASE_URL }}
+
+      - if: always()
+        run: python tests/junit_to_csv.py tests/results/junit.xml tests/results/run-${{ github.run_id }}.csv
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            tests/results/*.csv
+            test-results/**
