@@ -351,7 +351,11 @@ cmd_init_csv() {
   echo "created: $CSV"
 }
 
-need_state() { [ -f "$STATE" ] || printf '%s\n' "$STATE_HEADER" > "$STATE"; }
+need_state() {
+  [ -f "$STATE" ] && return 0
+  mkdir -p "$CACHE"          # a suite may exist without .cache/ ever being made
+  printf '%s\n' "$STATE_HEADER" > "$STATE"
+}
 
 # Join testcases.csv with .cache/state.csv on id, emitting one wide row per
 # case. Everything that needs a bookkeeping column reads through this, so the
@@ -1842,8 +1846,41 @@ Never `cat` testcases.csv. Query it.
 EOF
 }
 
+# tf_auto_migrate -- bring an older suite up to date without being asked.
+#
+# Two things can be out of date: the schema (the old 20-column testcases.csv)
+# and the layout (a top-level CSV from before the workbook existed). Both are
+# handled here, once, before the subcommand runs, so nobody has to know that
+# `migrate` exists. Safe on a current suite: it reads one header line and
+# returns. Set TF_NO_AUTO_MIGRATE=1 to hold a suite exactly where it is.
+tf_auto_migrate() {
+  [ "${TF_NO_AUTO_MIGRATE:-}" = "1" ] && return 0
+  [ -f "$CSV" ] || return 0
+
+  # Old schema. cmd_migrate backs up to .old, converts, and adopts the workbook.
+  if head -1 "$CSV" 2>/dev/null | grep -q '^id,feature,role'; then
+    echo "tf: this suite uses the old format -- migrating it now" >&2
+    cmd_migrate >&2 || true
+    return 0
+  fi
+
+  # Current schema, old layout: the CSV is still at the top level.
+  case "$CSV" in
+    "$TESTS_DIR/testcases.csv") tf_adopt_workbook >&2 || true ;;
+  esac
+  return 0
+}
+
 [ $# -gt 0 ] || { usage; exit 0; }
 sub="$1"; shift
+
+# Housekeeping first -- except for the two subcommands that answer without
+# touching a suite at all.
+case "$sub" in
+  help|-h|--help|version|-v|--version) ;;
+  *) tf_auto_migrate ;;
+esac
+
 case "$sub" in
   init-csv)  cmd_init_csv "$@" ;;
   select)    cmd_select "$@" ;;

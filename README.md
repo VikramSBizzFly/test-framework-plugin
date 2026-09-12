@@ -232,7 +232,7 @@ tf.sh storage-state admin   # cookie jar -> Playwright session
 tf.sh xlsx                  # rebuild the workbook
 tf.sh xlsx --import         # pull hand edits out of the sheet
 tf.sh xlsx --status         # write verdicts back after a run
-tf.sh migrate               # convert a suite from an older version
+tf.sh migrate               # force a migration (normally automatic)
 tf.sh version
 tf.sh help
 ```

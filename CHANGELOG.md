@@ -36,21 +36,26 @@ agents, the skills, plain-language activation, command wiring, and docs.
   page gets a responsive case.
 - The trigger hook and the `qa` skill now cover everything the plugin does —
   flows, journeys, responsive, accessibility, the workbook — not just testing.
+- **Migration happens by itself.** Any `tf.sh` call on an out-of-date suite
+  converts it — old 20-column schema, old top-level CSV layout, or both — before
+  running. `TF_NO_AUTO_MIGRATE=1` opts out.
 
 ### Changed
 
 - The engine's CSV moved to `tests/.cache/testcases.csv`; a suite created before
   the workbook keeps working where it is until `tf.sh migrate` adopts it.
-  **Upgrading:** run `tf.sh migrate` once. It moves the CSV, builds the
-  workbook, and keeps every id, status and note. Nothing is moved as a side
-  effect of another command — a file you have been opening for months should not
-  relocate itself.
+  **Upgrading is automatic**: the first `tf.sh` call on an out-of-date suite
+  migrates both the schema and the layout, keeps every id, status and note, and
+  leaves a `.old` backup. `tf.sh migrate` still exists if you want to force it;
+  `TF_NO_AUTO_MIGRATE=1` holds a suite exactly where it is.
 - Visual baselines are per width: `tests/baselines/<id>@<width>.png`.
 - `viewport` — a column declared in the state schema since the beginning and
   never used — now carries the width a responsive case failed at.
 
 ### Fixed
 
+- `need_state` creates `tests/.cache/` before writing into it. A suite that had
+  never had that directory made failed with an awk error instead.
 - `tf_python` verifies the interpreter actually runs. On Windows `python3` is
   usually an App Execution Alias that resolves on PATH, prints an advert for the
   Microsoft Store and exits 49 — being on PATH is not evidence of being Python.
