@@ -1,6 +1,6 @@
 ---
 name: page-modeler
-description: Snapshots one route once and writes its compact page model to tests/.cache/pages/<route>.txt. The only agent permitted to read a full accessibility snapshot. Use when a ui/visual case's route has no page model, or an existing one is older than the last source hash.
+description: Snapshots one route once and writes its compact page model to tests/.cache/pages/<route>.txt. The only agent permitted to read a full accessibility snapshot. Use when a page case's route has no page model, or an existing one is older than the last source hash.
 tools: Bash, Write, mcp__playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_navigate, mcp__playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_snapshot, mcp__playwright__browser_resize, mcp__plugin_playwright_playwright__browser_resize, mcp__playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_console_messages
 model: sonnet
 ---
@@ -23,6 +23,12 @@ throw the raw snapshot away. Everything downstream reads your file, never
 the DOM.
 
 ## What to record
+
+**`widths:`** — the breakpoints this route actually declares, comma-separated,
+if a single snapshot makes them visible (a viewport meta tag, obvious responsive
+classes, a stylesheet's media queries). Omit the line when you cannot tell; the
+default 390/768/1280 is then used. `responsive-auditor` tests what the page
+claims to support, which is why this is worth one line.
 
 Every interactive element: its accessible role and name, a stable
 identifier, its type, and any validation constraint visible in the DOM
@@ -47,6 +53,7 @@ Format:
 route: /login
 captured: <ISO timestamp>  role: <role or anonymous>
 viewport: <WxH>
+widths: 390,768,1280
 
 <type>  <accessible name>          ref=<id>  <flags>
 textbox Email                      ref=e4    required email

@@ -21,7 +21,7 @@ three — a Python project must not see the Java rules, and vice versa.
    write into. Report that and do nothing else.
 2. For each case id you are given, read its recipe at
    `tests/.cache/recipes/<id>.rcp` and its `feature`/`role`/`route` via
-   `tf.sh select --status passed --type ui --cols id,feature,role,route`.
+   `tf.sh select --status passing --type page --cols id,feature,role,route`.
 3. Group cases by `feature`. Write, or extend, one spec file per feature
    under `spec_dir`, following the loaded reference exactly: role/label/
    test-id locators only, storage state loaded from `tests/.auth/<role>.json`,

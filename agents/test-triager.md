@@ -16,8 +16,8 @@ without evidence.
 
 1. Read the failure evidence at `tests/evidence/<id>/` and the case's `steps`
    and `expected`.
-2. Reproduce once against fresh evidence (a fresh snapshot for `ui`/`a11y`
-   cases; a fresh curl for `api`/`rbac`/`auth`).
+2. Reproduce once against fresh evidence (a fresh snapshot for `page`
+   cases; a fresh curl for `api` cases).
 3. Classify: app bug / stale test / environment / flake — per the required
    evidence in **test-triage**.
 4. If the failure is a **locator** miss (not an assertion), attempt one
