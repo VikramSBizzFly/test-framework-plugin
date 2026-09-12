@@ -141,8 +141,9 @@ Two things keep it in hand: once the framework understands a page it saves that 
 never re-figures it out; and if your project already has Playwright installed, your
 tests become real test files that run for free, headless, every time after that.
 
-**Had a test suite from an older version?** Run `tf.sh migrate` to convert it. It
-keeps your ids and history, and moves you to the Excel workbook.
+**Had a test suite from an older version?** Nothing to do. The first time you
+run anything it converts itself to the Excel workbook, keeps all your tests,
+statuses and notes, and leaves a backup of the old file beside it.
 
 **No Excel file appeared?** Writing one needs Python on your computer. Without
 it everything still works — your tests just stay in `tests/testcases.csv`.

@@ -26,8 +26,10 @@ installed — and writes `tests/framework.json`. It returns six lines; use its
   `tests/.cache/`, `tests/evidence/`, `tests/results/`
 - copy `templates/<stack>/` **only if tier >= 1**
 
-**3. Migrate an older suite.** If `tests/testcases.csv` already exists in the
-old 20-column format, run `tf.sh migrate`. It keeps every id and all history.
+**3. Older suites migrate themselves.** Any `tf.sh` call brings an out-of-date
+suite up to the current schema and layout on its own, keeping every id, status
+and note, and leaving a `.old` backup. Nothing to run, nothing to tell the user
+to run — mention it only if you see the migration notice go by.
 
 **4. Log in.** For each role in `credentials.json`, delegate to the
 `login-broker` agent — one call per role. It tries `tf.sh login <role>` first,
