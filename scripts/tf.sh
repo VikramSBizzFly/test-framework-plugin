@@ -12,8 +12,18 @@
 set -u
 
 TESTS_DIR="${TF_TESTS_DIR:-tests}"
-CSV="$TESTS_DIR/testcases.csv"
 CACHE="$TESTS_DIR/.cache"
+XLSX="$TESTS_DIR/testcases.xlsx"
+
+# Where the CSV lives. tests/testcases.xlsx is the store a person opens; the CSV
+# is the copy awk can read, and new suites keep it out of sight in .cache/. A
+# suite created before the workbook existed keeps its top-level CSV and goes on
+# working untouched -- `tf.sh migrate` is what moves it.
+if [ -f "$TESTS_DIR/testcases.csv" ]; then
+  CSV="$TESTS_DIR/testcases.csv"
+else
+  CSV="$CACHE/testcases.csv"
+fi
 RESULTS="$TESTS_DIR/results"
 CREDS="$TESTS_DIR/credentials.json"
 FRAMEWORK="$TESTS_DIR/framework.json"
@@ -46,6 +56,10 @@ alias_col() {
 }
 
 die() { echo "tf: $*" >&2; exit 1; }
+# die3 -- "could not run", exit 3. Distinct from 1 (tests failed) and 2 (a
+# security failure) so CI can tell a broken environment from a broken app. Used
+# by the production guard and by preflight: neither is a test result.
+die3() { echo "tf: $*" >&2; exit 3; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # ---------------------------------------------------------------- awk library
@@ -169,14 +183,14 @@ json_keys() { # json_keys <file> <object-key>  -> one key per line
 # including run-api, which is otherwise the fastest way to hammer a live API.
 assert_target_allowed() {
   base="$(json_get "$CREDS" base_url 2>/dev/null || true)"
-  [ -n "$base" ] || die "no base_url in $CREDS"
+  [ -n "$base" ] || die3 "no base_url in $CREDS"
   host="$(printf '%s' "$base" | sed -e 's#^[a-zA-Z]*://##' -e 's#[:/].*$##')"
   case "$host" in
     localhost|127.0.0.1|0.0.0.0|::1|*.local|*.localhost|host.docker.internal) return 0 ;;
   esac
   allow="$(json_get "$FRAMEWORK" allow_remote 2>/dev/null || echo false)"
   [ "$allow" = "true" ] && return 0
-  die "refusing to run against remote host '$host'.
+  die3 "refusing to run against remote host '$host'.
     base_url is not local and framework.json does not set \"allow_remote\": true.
     If '$host' really is a disposable test environment, set that flag explicitly."
 }
@@ -916,17 +930,27 @@ csv_esc() { printf '%s' "$1" | sed 's/"/""/g' | awk '{ if ($0 ~ /[",]/) printf "
 cmd_preflight() {
   assert_target_allowed
   base="$(json_get "$CREDS" base_url)"
-  have curl || die "preflight: curl not found"
+  have curl || die3 "preflight: curl not found"
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$base" 2>/dev/null)"; [ -n "$code" ] || code=000
   case "$code" in
-    000) die "preflight: $base is unreachable. Start the app first." ;;
-    5*)  die "preflight: $base returned $code. The app is up but erroring." ;;
+    000) die3 "preflight: $base is unreachable. Start the app first." ;;
+    5*)  die3 "preflight: $base returned $code. The app is up but erroring." ;;
   esac
   echo "preflight: $base -> $code"
+  # Two session artifacts, and a run needs both: the jar is what curl reads, the
+  # storage state is what every browser case reads. A role with only the jar
+  # runs the browser pass logged out, and a logged-out user is refused
+  # everything -- so every permission case "passes". Report the gap here.
   for role in $(json_keys "$CREDS" roles 2>/dev/null); do
     jar="$TESTS_DIR/.auth/$role.cookies"
-    if [ -f "$jar" ]; then echo "preflight: session present for $role"
-    else echo "preflight: no session for $role (run /test-setup)" >&2; fi
+    state="$TESTS_DIR/.auth/$role.json"
+    if [ -f "$jar" ] && [ -f "$state" ]; then
+      echo "preflight: session present for $role"
+    elif [ -f "$jar" ]; then
+      echo "preflight: $role has a cookie jar but no browser session (run: tf.sh storage-state $role)" >&2
+    else
+      echo "preflight: no session for $role (run /test-setup)" >&2
+    fi
   done
 }
 
@@ -984,6 +1008,46 @@ cmd_login() {
     The app likely uses a JavaScript login, SSO, or 2FA. Run /test-setup to
     log in through a real browser instead." ;;
   esac
+}
+
+# storage-state <role> -- convert a curl cookie jar into Playwright storage state.
+#
+# `login` writes tests/.auth/<role>.cookies, which only curl reads. Every
+# browser case reads tests/.auth/<role>.json instead, and a role that has the
+# jar but not the state looks logged in to the API pass and logged out to the
+# browser pass -- so every permission case "passes" by virtue of being refused
+# everything. This converts one to the other, HttpOnly cookies included, which
+# is why it is preferred over reading cookies back out of a browser.
+cmd_storage_state() {
+  role="${1:?storage-state: role required}"
+  jar="$TESTS_DIR/.auth/$role.cookies"
+  out="$TESTS_DIR/.auth/$role.json"
+  [ -f "$jar" ] || die "storage-state: no cookie jar for $role -- run: tf.sh login $role"
+  mkdir -p "$TESTS_DIR/.auth"
+  awk -v out="$out" -v q='"' '
+    /^#HttpOnly_/ { ho = "true"; sub(/^#HttpOnly_/, "") }
+    /^#/ { next }
+    NF < 7 { next }
+    function kv(k, v) { return q k q ": " q v q }
+    {
+      sec = (tolower($4) == "true") ? "true" : "false"
+      ex = ($5 == "0") ? "-1" : $5
+      if (ho != "true") ho = "false"
+      n++
+      c[n] = "    {" kv("name", $6) ", " kv("value", $7) ", " kv("domain", $1) ", " kv("path", $3) ", " q "expires" q ": " ex ", " q "httpOnly" q ": " ho ", " q "secure" q ": " sec ", " kv("sameSite", "Lax") "}"
+      ho = ""
+    }
+    END {
+      print "{" > out
+      print "  " q "cookies" q ": [" > out
+      for (i = 1; i <= n; i++) print c[i] (i < n ? "," : "") > out
+      print "  ]," > out
+      print "  " q "origins" q ": []" > out
+      print "}" > out
+      printf "storage-state: %d cookies -> %s\n", n, out
+    }
+  ' "$jar" >&2
+  [ -s "$out" ] || die "storage-state: wrote nothing for $role -- jar was empty"
 }
 
 # run-api -- execute `type=api` cases with curl.
@@ -1164,7 +1228,13 @@ cmd_cost() {
 # high, anonymous -> nobody, verified/stable -> passing.
 cmd_migrate() {
   need_csv
-  head -1 "$CSV" | grep -q '^id,area,who' && { echo "migrate: already in the new format"; return 0; }
+  # The schema may already be current while the *layout* is not -- a suite from
+  # before the workbook existed. Adopting it is still a migration.
+  head -1 "$CSV" | grep -q '^id,area,who' && {
+    echo "migrate: schema already current"
+    tf_adopt_workbook
+    return 0
+  }
   head -1 "$CSV" | grep -q '^id,feature,role' || die "migrate: unrecognised header; expected the old 20-column format"
 
   cp "$CSV" "$CSV.old" || die "migrate: could not back up $CSV"
@@ -1207,6 +1277,24 @@ cmd_migrate() {
     END { print "migrate: " moved + 0 " cases moved" > "/dev/stderr" }
   ' "$CSV" > "$tmp" && mv "$tmp" "$CSV" && mv "$stmp" "$STATE"
   echo "migrate: old file kept at $CSV.old"
+  tf_adopt_workbook
+}
+
+# Move a pre-workbook suite to the new layout: the xlsx becomes the store and
+# the CSV moves out of sight into .cache/. Only on an explicit `migrate` -- a
+# file a person has been opening for months should not relocate itself as a side
+# effect of some other command.
+tf_adopt_workbook() {
+  [ -f "$TESTS_DIR/testcases.csv" ] || return 0
+  tf_python >/dev/null 2>&1 || {
+    echo "migrate: no python here, so the suite stays at $TESTS_DIR/testcases.csv" >&2
+    return 0
+  }
+  mkdir -p "$CACHE"
+  mv "$TESTS_DIR/testcases.csv" "$CACHE/testcases.csv" || return 0
+  CSV="$CACHE/testcases.csv"
+  cmd_xlsx || true
+  echo "migrate: the store is now $XLSX; the engine's CSV moved to $CSV"
 }
 
 # cache-check <srcdir> -- is the discovery cache still valid?
@@ -1624,15 +1712,115 @@ cmd_render() {
 
 # ======================================================================= main
 
+# version -- print the plugin version.
+#
+# The version lives in exactly one place, .claude-plugin/plugin.json. Resolve it
+# from this script's own location, so it works whether tf.sh was invoked through
+# $CLAUDE_PLUGIN_ROOT, by an absolute path, or from a checkout. Unknown is an
+# answer; failing is not -- this exists to make a bug report answerable.
+cmd_version() {
+  root="${CLAUDE_PLUGIN_ROOT:-}"
+  [ -n "$root" ] || root="$(CDPATH= cd -- "$(dirname -- "$0")/.." 2>/dev/null && pwd)"
+  v="$(json_get "$root/.claude-plugin/plugin.json" version 2>/dev/null)"
+  [ -n "$v" ] || v=unknown
+  echo "tf.sh $v"
+}
+
+# xlsx [--import|--status] -- the Excel side.
+#
+# tests/testcases.xlsx is the store: flows, cases and their statuses. This is the
+# bridge to it, and scripts/tf-xlsx.py is the only thing that touches the file.
+#
+#   (no flag)  rebuild every sheet from the CSV, flows.txt and the last run
+#   --import   pull the sheet back in: hand edits win, new rows get ids
+#   --status   write verdicts back after a run, and roll each flow up
+#
+# Writing a .xlsx needs an interpreter, so a machine without one gets a line on
+# stderr and exit 0 -- never a failed run. The CSV is still correct there.
+# Verify, never infer -- the same rule stack detection follows. On Windows,
+# `python3` is usually an App Execution Alias that resolves on PATH, prints an
+# advert for the Microsoft Store and exits 49. `have` is therefore not enough:
+# make each candidate prove it can run before believing in it.
+tf_python() {
+  for _c in python3 python py; do
+    if have "$_c" && "$_c" -c 'import sys, zipfile' >/dev/null 2>&1; then
+      echo "$_c"; return 0
+    fi
+  done
+  return 1
+}
+
+tf_xlsx_script() {
+  root="${CLAUDE_PLUGIN_ROOT:-}"
+  [ -n "$root" ] || root="$(CDPATH= cd -- "$(dirname -- "$0")/.." 2>/dev/null && pwd)"
+  echo "$root/scripts/tf-xlsx.py"
+}
+
+cmd_xlsx() {
+  mode=export
+  case "${1:-}" in
+    --import) mode=import ;;
+    --status) mode=status ;;
+    ""|--export) mode=export ;;
+    *) die "xlsx: unknown option $1 (use --import or --status)" ;;
+  esac
+
+  py="$(tf_python)"
+  script="$(tf_xlsx_script)"
+  if [ -z "$py" ] || [ ! -f "$script" ]; then
+    echo "xlsx: no python on PATH -- the workbook is not maintained here; $CSV is current" >&2
+    return 0
+  fi
+
+  need_csv
+  mkdir -p "$CACHE"
+  joined="$CACHE/.xlsx-cases.$$"
+  cmd_select --cols id,area,who,todo,expect,priority,status,notes,route,tags,viewport,last_run,last_result \
+             --format csv > "$joined" 2>/dev/null || : > "$joined"
+  flows="$CACHE/flows.txt"
+  latest="$(cmd_latest 1 2>/dev/null | head -1)"
+
+  rc=0
+  case "$mode" in
+    export|status)
+      "$py" "$script" "$( [ "$mode" = status ] && echo status || echo export )" \
+        --xlsx "$XLSX" --cases "$joined" --flows "$flows" --results "$latest" || rc=$?
+      ;;
+    import)
+      if [ ! -f "$XLSX" ]; then
+        echo "xlsx: no $XLSX yet, nothing to import" >&2
+        rm -f "$joined"; return 0
+      fi
+      newf="$CACHE/.xlsx-new.$$"; humanf="$CACHE/.xlsx-human.$$"
+      if "$py" "$script" import --xlsx "$XLSX" --cases "$joined" \
+           --out-human "$humanf" --out-new "$newf"; then
+        # New rows first, so state.csv gains their bookkeeping, then the human
+        # columns wholesale -- the sheet is the source of truth for those.
+        if [ "$(wc -l < "$newf" 2>/dev/null || echo 1)" -gt 1 ]; then
+          cmd_merge "$newf" >&2 || rc=$?
+        fi
+        cp "$humanf" "$CSV" || rc=$?
+      else
+        rc=$?
+      fi
+      rm -f "$newf" "$humanf"
+      ;;
+  esac
+  rm -f "$joined"
+  return $rc
+}
+
 usage() {
   cat <<'EOF'
 tf.sh - deterministic engine for the Claude test framework
 
 CSV        init-csv | select | set | setmany | merge | next-id | stats | prune | migrate
+excel      xlsx [--import|--status]
 discovery  routes | forms | schemas | hash | cache-check | impacted | cover
 generate   rbac
-execute    login | preflight | run-api
+execute    login | storage-state | preflight | run-api
 report     summary | watch | cost | diff | junit | render | latest
+meta       version | help
 
   select --status new --priority high --who nobody --area admin \
          --cols id,todo,route --limit 20 --count --format plain
@@ -1642,6 +1830,10 @@ report     summary | watch | cost | diff | junit | render | latest
   routes src/ > tests/.cache/routes.txt
   rbac tests/.cache/routes.txt > /tmp/rbac.csv
   run-api [--allow-destructive]
+  storage-state admin            cookie jar -> Playwright storage state
+  xlsx                           rebuild tests/testcases.xlsx
+  xlsx --import                  pull hand edits back out of the sheet
+  xlsx --status                  write verdicts back after a run
 
 Two files: tests/testcases.csv is the 8 plain columns a person reads;
 tests/.cache/state.csv is the bookkeeping. `select` joins them for you.
@@ -1672,6 +1864,8 @@ case "$sub" in
   migrate)   cmd_migrate "$@" ;;
   rbac)      cmd_rbac "$@" ;;
   login)     cmd_login "$@" ;;
+  storage-state) cmd_storage_state "$@" ;;
+  xlsx)      cmd_xlsx "$@" ;;
   preflight) cmd_preflight "$@" ;;
   run-api)   cmd_run_api "$@" ;;
   junit)     cmd_junit "$@" ;;
@@ -1680,6 +1874,7 @@ case "$sub" in
   summary)   cmd_summary "$@" ;;
   watch)     cmd_watch "$@" ;;
   latest)    cmd_latest "$@" ;;
+  version|-v|--version) cmd_version ;;
   help|-h|--help) usage ;;
   *) die "unknown subcommand: $sub (try: tf.sh help)" ;;
 esac
