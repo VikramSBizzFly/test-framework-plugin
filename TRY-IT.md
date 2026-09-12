@@ -71,8 +71,13 @@ return it catches what a simple web request can't: a page that redirects you awa
 with JavaScript, or a broken page that says "Access denied" while still answering
 "OK" underneath.
 
-You can open `tests/testcases.csv` in Excel and read every row in plain English.
-Delete anything that looks wrong.
+Everything lands in **`tests/testcases.xlsx`** — open it in Excel. Three tabs:
+**Flows** (what your software actually does, step by step, and whether anything
+tests it), **Test Cases** (every check, in plain English, with its status), and
+**Results** (how the last run went).
+
+You can edit it. Change a status, write a note, or type a new row and leave the
+id blank — the next run picks your changes up and keeps them.
 
 ---
 
@@ -96,6 +101,7 @@ Delete anything that looks wrong.
 | **fail** | Did not work. Something is wrong. |
 | **error** | Could not even try. Usually the app was down. |
 | **skip** | On purpose. Usually a test that deletes things. |
+| **flaky** | Passes sometimes and fails other times, with nothing changed. Listed on its own, and not counted for or against you. |
 
 Headings that can appear underneath:
 
@@ -121,6 +127,11 @@ unless you allow otherwise. Never point it at a live site with real customers.
 `tests/credentials.json`, then run `/test-setup` again. It logs in through a real
 browser, so most login pages work even if they need JavaScript.
 
+**"has a cookie jar but no browser session"** — the login half-worked: good
+enough for simple checks, not for the browser ones. Run `/test-setup` again. Do
+not ignore it, or the browser checks will run logged out and look like they
+passed.
+
 **"ran with no session"** — read this one carefully. The tests ran while logged
 out. Logged-out users are blocked from everything anyway, so the tests *look* like
 they passed but proved nothing. Fix the login and run again.
@@ -131,7 +142,10 @@ never re-figures it out; and if your project already has Playwright installed, y
 tests become real test files that run for free, headless, every time after that.
 
 **Had a test suite from an older version?** Run `tf.sh migrate` to convert it. It
-keeps your ids and history.
+keeps your ids and history, and moves you to the Excel workbook.
+
+**No Excel file appeared?** Writing one needs Python on your computer. Without
+it everything still works — your tests just stay in `tests/testcases.csv`.
 
 ---
 
@@ -140,16 +154,89 @@ keeps your ids and history.
 | Command | What it does |
 | --- | --- |
 | `/test-setup` | Set up a project: detect the stack, create `tests/`, log in as each role |
+| `/test-setup --ci` | The same, and write a workflow so the tests run on every pull request |
 | `/test-run` | Find pages, write the tests, run them, show the result |
 | `/test-report` | Show the last result again |
 | `/test-report --coverage` | Show what has no tests |
+| `/test-report --flakes` | Show the tests that keep changing their mind |
 | `/test-report --bug AUTH-003` | Turn a failure into a bug report |
+| `/test-report --publish` | Put the last result on a page you can share |
 
-`/test-run` flags: `--changed` (the default), `--all`, `--feature <name>`,
-`--only-failing`, `--headed`, `--fresh`, `--allow-destructive`.
+**How much to run.** Pick one; it uses `--changed` if you say nothing:
 
-`--headed` opens a visible browser so you can watch. Use it when a test fails and
-you can't tell why from the result box.
+| Flag | What it runs |
+| --- | --- |
+| `--changed` | Only what your last commit touched |
+| `--all` | Everything |
+| `--feature invoices` | One area of the app |
+| `--only-failing` | Just what failed last time |
+
+**Anything else you want it to do:**
+
+| Flag | What it adds |
+| --- | --- |
+| `--headed` | Opens a visible browser so you can watch |
+| `--crawl` | Clicks around the app to find pages the code didn't mention |
+| `--a11y` | Checks each page can be used with a screen reader |
+| `--responsive` | Checks each page on a phone, a tablet and a desktop screen |
+| `--security` | Tries harder to get at pages you shouldn't be able to see |
+| `--allow-destructive` | Also runs the tests that delete things |
+| `--fresh` | Rewrites the tests even if nothing changed |
+
+`--headed` is the one to reach for when a test fails and you can't tell why from
+the result box.
+
+---
+
+## Seeing what your software does
+
+Ask it to *"map the flows"* and it reads your code and writes down what the
+software actually does — log in, create an invoice, run payroll — with the steps,
+what each one saves, and how each one can fail. That goes in the **Flows** tab.
+
+The column worth looking at is **status**. A flow marked *not covered* is
+something your software does that nothing tests.
+
+---
+
+## The extra checks, in plain words
+
+**`--a11y`** asks: could someone using a screen reader actually use this page?
+It checks three things that stop people outright — every box has a label, every
+button can be reached, and the headings run in order. It is nearly free, because
+it reads something the browser already handed over.
+
+**`--responsive`** opens each page at phone, tablet and desktop size and looks
+for things that are actually broken — a page that scrolls sideways, text cut off
+or written over itself, a button pushed off the screen, a menu that never turns
+into a hamburger, tap targets too small for a thumb. A page *rearranging* itself
+on a phone is not a bug, and it won't report one.
+
+**`--security`** goes looking for pages you should not be able to open: someone
+else's record by changing a number in the address, a page missing from your menu
+but still reachable, a session that still works after you log out. It only ever
+*looks*. It never deletes, changes or takes anything, and it never attacks your
+login.
+
+Both are optional. Ask for them when you want them:
+
+```
+/test-run --a11y
+/test-run --responsive
+/test-run --security
+```
+
+---
+
+## You can just ask
+
+You don't have to remember the commands. Say what you want — *"find bugs in my
+app"*, *"can a normal user see the payroll page?"*, *"what isn't tested?"* — and
+it works out the rest.
+
+It does the quick, free checks straight away, then tells you how long the slow
+part will take and waits for you to say yes. It won't hijack a question that
+isn't about testing a website.
 
 ---
 
