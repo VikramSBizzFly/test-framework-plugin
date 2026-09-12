@@ -51,9 +51,15 @@ permission cases *correct*, not guessed.
 
 ## Step 4, delegation, and never
 
-Live-crawl only when static discovery clearly missed routes; run
+Live-crawl only when static discovery clearly missed routes, and delegate it to
+the `route-crawler` agent (serial — it shares the one browser); run
 `test-explorer` agents in parallel only over the static pass. Procedure and
 the crawl/run serialization rule: `references/live-crawl-and-delegation.md`.
+
+Once features are named, hand each one to the `flow-mapper` agent — it reads
+that area's code and writes the flows behind those routes to
+`tests/.cache/flows.txt`. Routes tell you where the app goes; flows tell you
+what it is for. See the **test-flows** skill.
 
 Never: read whole source files into the main thread, enumerate routes by hand,
 re-explore an unchanged repo, or return snapshots/DOM to the caller.

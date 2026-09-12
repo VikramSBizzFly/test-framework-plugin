@@ -7,9 +7,20 @@ description: Write test cases into tests/testcases.csv for this framework. Use w
 
 > `tf.sh` = `"$CLAUDE_PLUGIN_ROOT/scripts/tf.sh"` (not on PATH).
 
-`tests/testcases.csv` is for a person: eight plain-English columns, opens in
-Excel. Bookkeeping lives separately in `tests/.cache/state.csv`, never
-hand-edited. `tf.sh select` joins both transparently — write and query the
+Delegate authoring to the `case-author` agent, one call per feature, and API
+cases to `api-case-author`. Both write to a scratch CSV and `tf.sh merge`.
+
+Cases come from three inputs, not one: the **page model** (every interactive
+element and its constraints), the **flows** in `tests/.cache/flows.txt` (the
+end-to-end journey and each of its real failure branches — see the
+**test-flows** skill), and the free `tf.sh rbac` sweep.
+
+`tests/testcases.xlsx` is the store a person opens: the **Test Cases** sheet
+carries the eight plain-English columns, the **Flows** sheet the journeys, the
+**Results** sheet the last run. The engine reads a CSV copy in
+`tests/.cache/`, because awk cannot read a workbook; `tf.sh xlsx` keeps the two
+in step, and `tf.sh xlsx --import` pulls hand edits back in. Bookkeeping lives
+in `tests/.cache/state.csv`, never hand-edited. `tf.sh select` joins both transparently — write and query the
 human file, forget the other exists. **Never `cat` either file.** Query them:
 
 ```sh
@@ -29,6 +40,9 @@ Why: a permission refusal is often a page served with HTTP 200 and the text
 exist for curl to hit. Only a rendered page proves a refusal actually
 refuses. When in doubt: *is this a `/api/*` call, or does it render?* Table:
 `references/schema.md`. RBAC/auth sweeps are generated — run `tf.sh rbac`.
+Why a status code cannot decide this, and the probes the sweep cannot express:
+the **test-security** skill. Generating `api` cases from an OpenAPI/Swagger
+contract: `references/api-contracts.md`.
 
 ## Schema
 

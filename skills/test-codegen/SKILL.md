@@ -35,7 +35,7 @@ that one — a Python project must never see the Java rules, and vice versa.
    XPath; that is what makes self-healing possible later.
 2. **Auth**: load the saved storage state at `tests/.auth/<role>.json`. A
    generated spec never re-performs a login and never contains a credential —
-   those live only in `tests/credentials.json`.
+   those live only in `tests/credentials.json`. See the **test-auth** skill.
 3. **Naming**: stamp the source case ID into the test name so results map
    back to the CSV and the JUnit adapter can recover the id.
 4. **Grouping**: one suite/describe/class per feature, matching the case's

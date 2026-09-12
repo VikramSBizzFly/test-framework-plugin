@@ -8,14 +8,18 @@ description: Detect a target project's language, test runner and framework tier,
 > `tf.sh` = `"$CLAUDE_PLUGIN_ROOT/scripts/tf.sh"` (not on PATH).
 
 Detect **once**, into `tests/framework.json`. Every other command reads that
-file rather than re-detecting.
+file rather than re-detecting. Delegate the detection itself to the
+`stack-detector` agent; it returns six lines and writes the file.
 
 ## Two rules
 
 1. **Verify, never infer.** A `package.json` proves the project is JS; it does
    not prove Node is installed. Probe for the runtime:
    `command -v node`, `command -v python`, `command -v mvn`, `command -v dotnet`.
-   A manifest without its runtime is **Tier 0**.
+   Then probe the Playwright **binding** itself (`node_modules/@playwright/test`,
+   `pip show pytest-playwright`, the dependency in `pom.xml`/`*.csproj`). A
+   manifest without its runtime — or a runtime without its binding — is
+   **Tier 0**.
 2. **Never install anything.** Not npm, not pip, not a Playwright browser
    binary. If a stack is present but its Playwright binding is missing, say what
    the user *could* install to reach Tier 1, then proceed at Tier 0. The

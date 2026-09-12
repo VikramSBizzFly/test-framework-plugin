@@ -41,7 +41,8 @@ Other modes: `--quiet` (one line), `--json` (CI), `--ascii` (terminals that
 mangle Unicode), `--no-color`.
 
 For prose beyond the panel, coverage reporting and Artifact publishing, see
-`references/prose-coverage-publishing.md`.
+`references/prose-coverage-publishing.md`; for `--bug <id>`, the report shape and
+the `gh issue create` hand-off are in `references/bug-reports.md`.
 
 ## Never report an unverified pass as a pass
 
