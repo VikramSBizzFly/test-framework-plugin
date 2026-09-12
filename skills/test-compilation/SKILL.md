@@ -7,6 +7,9 @@ description: Compile a route's page model plus its testcases.csv rows into recip
 
 > `tf.sh` = `"$CLAUDE_PLUGIN_ROOT/scripts/tf.sh"` (not on PATH).
 
+Delegate this to the `test-compiler` agent, one call per route — page models
+and case text are exactly what the main thread should never hold.
+
 The browser is expensive; text transformation is free. A **page model** at
 `tests/.cache/pages/<route>.txt` (written once, by `page-modeler`) is read
 here to compile **every** case on that route — this step never opens a
@@ -31,6 +34,8 @@ lines are checked. A recipe with an `expect` in the middle is a sign the case
 should have been split, or should have been `api` instead.
 
 **Judging a permission failure needs the rendered page, not a status code.**
+(The **test-security** skill owns this rule and why the framework is built
+around it.)
 A refusal can be a redirect, a banner, or a page that returns 200 with
 "Access denied" in the body — `expect any-of` and `expect not-text` exist for
 exactly this. See `references/grammar.md`.

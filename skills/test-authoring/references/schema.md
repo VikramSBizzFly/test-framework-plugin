@@ -57,7 +57,9 @@ id,area,who,what to do,what should happen,priority,status,notes
 - **`priority`** — `high` (must work, bare `/test-run` only executes these)
   · `medium` (core) · `low` (edge case).
 - **`status`** — leave `new`; the runner owns it from then on. Values are
-  `new` / `passing` / `failing` / `skipped`.
+  `new` / `passing` / `failing` / `flaky` / `skipped`. `flaky` is set by triage
+  after three verdict flips with no source change (see the **test-triage**
+  skill); it is excluded from the gating verdict but never dropped or hidden.
 - **`notes`** — anything a human wants to remember. Never touched by a run
   unless someone hand-edits it.
 

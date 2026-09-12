@@ -1,6 +1,6 @@
 ---
 name: test-signals
-description: Add accessibility, performance and visual-regression assertions to a browser case. Use when authoring an a11y/perf/visual case, when a ui case already opens a page and the extra assertion is nearly free, or when deciding whether visual regression is worth turning on.
+description: Add accessibility, performance and visual-regression assertions to a browser case. Use when authoring an a11y/perf/visual case, when a page case already opens a route and the extra assertion is nearly free, or when deciding whether visual regression is worth turning on.
 ---
 
 # Signals
@@ -8,7 +8,13 @@ description: Add accessibility, performance and visual-regression assertions to 
 Three assertions riding on browser cases you already run. Only add them where
 they cost close to nothing — that is the whole pitch.
 
-## Accessibility (`type=a11y`) — nearly free
+All of them stay `type=page`; the signal lives in `tags` (`a11y`, `perf`,
+`visual`, `responsive`). `type` is only ever `page` or `api` — see **test-authoring**.
+Delegate the browser work: accessibility to the `a11y-auditor` agent, a
+baseline diff to the `visual-reviewer` agent. Neither the tree nor the image
+belongs in the main thread.
+
+## Accessibility (`tags=a11y`) — nearly free
 
 The Playwright MCP returns an accessibility tree with every snapshot you
 already take for a `ui` case. Asserting on it costs no extra navigation.
@@ -24,7 +30,7 @@ Ignore: colour contrast, ARIA role nitpicks below `WCAG A`, and anything only
 a visual diff would catch — that noise buries the three checks above that
 actually block a user. One `a11y` case per route, not per element.
 
-## Performance (`type=perf`) — capture what the browser already timed
+## Performance (`tags=perf`) — capture what the browser already timed
 
 Capture navigation timing (`domContentLoaded` / `load`, or the MCP's own
 timing if it exposes one) on a case you're already running — do not add a
@@ -35,9 +41,21 @@ Over budget is a `FAIL`, not a warning — a budget nobody enforces is decor.
 Record the actual ms in the result row so a regression shows a number, not
 just red.
 
-## Visual regression (`type=visual`) — opt-in, and the one signal that costs tokens
+## Responsive (`tags=responsive`) — three widths, five failures
 
-Baselines live at `tests/baselines/<case-id>.png`. A run diffs the current
+Delegate to the `responsive-auditor` agent, one call per route. It opens the
+route at **390 / 768 / 1280** and fails only on what a person could not use:
+horizontal overflow, clipped or overlapping text, a control pushed off-screen,
+a nav that never collapses, and tap targets under 24px on the phone width.
+
+**Reflow is not a failure** — a stacking sidebar or a one-column grid is the
+design working. The failing width goes in the case's `viewport` column, which
+the state schema has always had and nothing used until now.
+
+## Visual regression (`tags=visual`) — opt-in, and the one signal that costs tokens
+
+Baselines live at `tests/baselines/<case-id>@<width>.png` — one per width, so a
+phone render is never compared against a desktop baseline. A run diffs the current
 screenshot against the baseline; a diff is not itself a verdict — it is a
 manual review, because the model has to look at the image to say if it
 matters. That review is the only thing in this whole framework that spends

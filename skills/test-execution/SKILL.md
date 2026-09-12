@@ -28,8 +28,9 @@ don't start a capped run. Narrow (`--priority high`, `--changed`, `--area`)
 or ask them to raise the cap. Stages 1-2 are free and run regardless.
 
 **Sessions expire mid-run.** Don't read a wave of same-role failures as the
-app breaking — re-run `tf.sh login <role>` and continue. Blame the app only
-once a fresh session still fails.
+app breaking — hand the role to `login-broker` and continue. Blame the app only
+once a fresh session still fails. Sessions, the two auth artifacts and the
+credential rules are owned by the **test-auth** skill.
 
 ## Routing
 

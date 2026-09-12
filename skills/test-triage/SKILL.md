@@ -7,6 +7,10 @@ description: Diagnose why a case failed and assign a verdict — app bug, stale 
 
 > `tf.sh` = `"$CLAUDE_PLUGIN_ROOT/scripts/tf.sh"` (not on PATH).
 
+Delegate one failing case at a time to the `test-triager` agent; look across
+runs for instability with `flake-analyst`, and judge a `tags=visual` diff with
+`visual-reviewer`.
+
 A verdict without evidence is a guess. Every one of the four categories below
 requires something concrete before you assign it — "probably flaky" is not a
 diagnosis, it is how real bugs get waved away.
