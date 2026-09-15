@@ -4,14 +4,38 @@
 # Sourced by scripts/tf.sh; defines functions only. See tf.sh for the paths
 # and schema variables these rely on.
 
-# `--cols what to do` would need shell quoting, so accept short aliases.
+# `--cols Test Case Steps` would need shell quoting on every call, so accept a
+# one-word alias for each visible column. The names from before 1.0 are kept as
+# aliases too: an older agent prompt asking for `todo` or `area` still works,
+# and `who` resolves to the hidden `role` column where that meaning now lives.
 alias_col() {
   case "$1" in
-    todo|do|steps)        echo 'what to do' ;;
-    expect|should|expected) echo 'what should happen' ;;
-    role)                 echo 'who' ;;
-    feature)              echo 'area' ;;
-    *)                    echo "$1" ;;
+    id)                       echo 'Test Case ID' ;;
+    module|area|feature)      echo 'Module' ;;
+    scenario)                 echo 'Test Scenario' ;;
+    description|desc|notes)   echo 'Test Description' ;;
+    preconditions|precondition|pre) echo 'Preconditions' ;;
+    steps|todo|do)            echo 'Test Case Steps' ;;
+    data|testdata)            echo 'Test Data' ;;
+    expected|expect|should)   echo 'Expected Result' ;;
+    actual|result)            echo 'Actual Result' ;;
+    status)                   echo 'Status' ;;
+    who)                      echo 'role' ;;
+    *)                        echo "$1" ;;
+  esac
+}
+
+# The QA status words, and every older spelling that must land on one of them.
+# Used wherever the engine compares or writes a status.
+qa_status() {
+  case "$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z')" in
+    ''|new|'not run')          echo 'Not Run' ;;
+    pass|passing|passed)       echo 'Pass' ;;
+    fail|failing|failed)       echo 'Fail' ;;
+    blocked|error|unjudged)    echo 'Blocked' ;;
+    flaky)                     echo 'Flaky' ;;
+    skip|skipped)              echo 'Skipped' ;;
+    *)                         echo "$1" ;;
   esac
 }
 
@@ -52,6 +76,11 @@ function csvjoin(arr, n,   i, out) {
   out = ""
   for (i = 1; i <= n; i++) out = out (i > 1 ? "," : "") csvq(arr[i])
   return out
+}
+function idcol(H) {
+  # The visible store calls it "Test Case ID"; state.csv and every older
+  # format call it "id". One helper so no caller has to know which it is.
+  return ("id" in H) ? H["id"] : H["Test Case ID"]
 }
 function hdrmap(line, idx,   a, n, i) {
   n = csvsplit(line, a)

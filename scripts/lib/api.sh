@@ -69,7 +69,7 @@ cmd_run_api() {
   skip=0; unjudged=0
   while IFS="$US" read -r id typ who route tags status method body headers expect_code repeat; do
     [ -n "${id:-}" ] || continue
-    [ "$status" = "skipped" ] && { skip=$((skip + 1)); _tf_progress_tick SKIP "$typ" "$id"; continue; }
+    [ "$(qa_status "$status")" = "Skipped" ] && { skip=$((skip + 1)); _tf_progress_tick SKIP "$typ" "$id"; continue; }
     case "$tags" in
       *destructive*) [ "$allow_destructive" = "1" ] || \
         { skip=$((skip + 1)); _tf_progress_tick SKIP "$typ" "$id"; continue; } ;;
@@ -119,13 +119,23 @@ cmd_run_api() {
   _tf_progress_done
   rm -f "$work"
 
-  # Fold verdicts back into the store in a single pass. Only a verdict moves
-  # `status`: an ERROR (the request never completed) or an UNJUDGED case says
-  # nothing about the app, so those record last_result and nothing else.
+  # Fold verdicts back into the store in a single pass. An ERROR (the request
+  # never completed) or an UNJUDGED case says nothing about the app, so neither
+  # may read as Pass or Fail -- they become `Blocked`, the QA word for "this
+  # could not be judged", which keeps them visibly out of both columns.
   now="$(date +%Y-%m-%dT%H:%M:%S)"
+  # `Actual Result` is a visible column now, so a run records what it saw
+  # rather than leaving the tester to guess. setmany reads `+` as a space.
   awk -F, -v now="$now" 'NR > 1 {
-    st = ($7 == "PASS") ? " status=passing" : (($7 == "FAIL") ? " status=failing" : "")
-    print $1 st " last_result=" $7 " last_run=" now
+    st = ($7 == "PASS") ? " status=Pass" : \
+         (($7 == "FAIL") ? " status=Fail" : \
+         ((($7 == "ERROR") || ($7 == "UNJUDGED")) ? " status=Blocked" : ""))
+    act = $6
+    # A bare status code means little to a tester reading the sheet.
+    if (act ~ /^[0-9]/) act = "HTTP " act
+    if (act != "" && act != "-") { gsub(/ /, "+", act); act = " actual=" act }
+    else act = ""
+    print $1 st act " last_result=" $7 " last_run=" now
   }' "$out" | cmd_setmany
 
   run_t1=$(date +%s%N 2>/dev/null || echo 0)

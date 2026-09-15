@@ -1,7 +1,7 @@
 #!/bin/sh
-# guard-store.sh - PreToolUse hook: nothing but tf.sh rewrites the case store.
+# guard-store.sh - PreToolUse hook: nothing but tf.sh rewrites the case or bug store.
 #
-# testcases.csv and .cache/state.csv are read a line at a time by awk. A file
+# testcases.csv, .cache/state.csv and .cache/bugs.csv are read a line at a time by awk. A file
 # pretty-printed into aligned columns, or re-saved by a tool that quotes
 # differently, looks fine to a person and is garbage to the engine -- and it has
 # happened. tf.sh validates and backs up every write; a Write, an Edit or a
@@ -14,14 +14,15 @@
 input="$(cat)"
 # The file name must start a path segment: new-testcases.csv is someone's
 # scratch file, and only the state.csv under .cache/ is ours.
-name='(testcases\.csv|\.cache[/\\]+state\.csv)'
+name='(testcases\.csv|\.cache[/\\]+(state|bugs)\.csv)'
 store="(^|[^A-Za-z0-9_.-])$name"
 target="([^[:space:]|;&]*[/\\\\])?$name"   # an optional directory, then the name
 
 block() {
-  echo "Blocked: $1 would rewrite the test case store directly." >&2
+  echo "Blocked: $1 would rewrite the test case or bug store directly." >&2
   echo "The store is read line by line and one malformed row shifts every column." >&2
   echo "Use tf.sh instead: set <id> col=value, merge <file.tsv>, prune --apply," >&2
+  echo "bug from <case-id> ..., bug set <BUG-NNN> col=value," >&2
   echo "or xlsx --import for edits made in the workbook. Damaged already? tf.sh restore" >&2
   exit 2
 }
@@ -32,7 +33,7 @@ case "$tool" in
   Write|Edit|MultiEdit|NotebookEdit)
     # JSON escapes Windows backslashes, so accept / \ or \\ before the name.
     path="$(printf '%s' "$input" | grep -oE '"(file_path|notebook_path)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1)"
-    if printf '%s' "$path" | grep -qE '(^|[/\\])testcases\.csv"$|\.cache[/\\]+state\.csv"$'; then
+    if printf '%s' "$path" | grep -qE '(^|[/\\])testcases\.csv"$|\.cache[/\\]+(state|bugs)\.csv"$'; then
       block "$tool"
     fi
     ;;

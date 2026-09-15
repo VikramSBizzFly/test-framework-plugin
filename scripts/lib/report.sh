@@ -20,14 +20,14 @@ cmd_cost() {
     function bucket(type, status, spec) {
       if (type == "api")        return "api"
       if (spec != "")           return "spec"
-      if (status == "skipped")  return "skip"
-      if (status == "passing" || status == "failing") return "replay"
+      if (status == "Skipped")  return "skip"
+      if (status == "Pass" || status == "Fail" || status == "Flaky") return "replay"
       return "compile"
     }
     NR == 1 { hdrmap($0, H); next }
     {
       csvsplit($0, F)
-      b = bucket(F[H["type"]], F[H["status"]], F[H["spec_file"]])
+      b = bucket(F[H["type"]], F[H["Status"]], F[H["spec_file"]])
       N[b]++; total++
       if (b == "compile") { r = F[H["route"]]
         if (r != "" && !(r in ROUTE)) { ROUTE[r] = 1; nroutes++ } }
