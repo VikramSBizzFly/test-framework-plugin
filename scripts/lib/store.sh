@@ -19,9 +19,32 @@ cmd_init_csv() {
 }
 
 need_state() {
-  [ -f "$STATE" ] && return 0
-  mkdir -p "$CACHE"          # a suite may exist without .cache/ ever being made
-  printf '%s\n' "$STATE_HEADER" > "$STATE"
+  if [ ! -f "$STATE" ]; then
+    mkdir -p "$CACHE"          # a suite may exist without .cache/ ever being made
+    printf '%s\n' "$STATE_HEADER" > "$STATE"
+    return 0
+  fi
+  [ "$(head -1 "$STATE" | tr -d '\r')" = "$STATE_HEADER" ] || _tf_upgrade_state
+}
+
+# A state file from an older release lacks newer bookkeeping columns, and `set`
+# silently ignores a column its file has no header for. Append whatever is
+# missing, empty, keeping every existing column where it is.
+_tf_upgrade_state() {
+  _u_t="$STATE.tmp.$$"
+  awk -v want="$STATE_HEADER" "$AWKLIB"'
+    NR == 1 {
+      sub(/\r$/, ""); hdrmap($0, H)
+      nw = split(want, W, ","); add = ""; nadd = 0
+      for (i = 1; i <= nw; i++) if (!(W[i] in H)) { add = add "," W[i]; nadd++ }
+      if (nadd == 0) { quit = 1; exit 9 }
+      pad = ""; for (i = 1; i <= nadd; i++) pad = pad ","
+      print $0 add; next
+    }
+    { sub(/\r$/, ""); print ($0 == "" ? $0 : $0 pad) }
+    END { if (quit) exit 9 }
+  ' "$STATE" > "$_u_t"
+  if [ $? = 0 ]; then _tf_commit "$_u_t" "$STATE"; else rm -f "$_u_t"; fi
 }
 
 # Join testcases.csv with .cache/state.csv on id, emitting one wide row per
@@ -353,7 +376,7 @@ _tf_to_csv() {
 # column is acceptable: generators may send extra or reordered columns.
 _tf_validate_input() {
   head -1 "$1" | tr ',' '\n' | grep -qx 'id' || { echo "  line 1: the header has no id column" >&2; return 1; }
-  _tf_validate "$1" "$(head -1 "$1" | sed 's/$//')"
+  _tf_validate "$1" "$(head -1 "$1" | tr -d '\r')"
 }
 
 # next-id <PREFIX>  -> PREFIX-007

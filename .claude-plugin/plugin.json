@@ -1,6 +1,6 @@
 {
   "name": "test-framework",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Point Claude at any web app: it maps the routes, generates a CSV test suite, and runs it. Most cases execute with zero model tokens.",
   "author": { "name": "rahul" },
   "homepage": "https://github.com/VikramSBizzFly/test-framework-plugin",

@@ -226,6 +226,11 @@ cmd_summary() {
   # results columns: id,type,role,route,expected,actual,verdict,ms
   NR > 1 && NF >= 7 {
     id = $1; type = $2; role = $3; route = $4; actual = $6; verdict = $7
+    # Not a verdict on the app: listed apart, and left out of the pass rate.
+    if (verdict == "UNJUDGED") {
+      NUNJ++; if (NUNJ <= 5) UNJ[NUNJ] = sprintf("%-15s %-28s %s", id, route, $5)
+      next
+    }
     total++; V[verdict]++; TT[type]++
     if (verdict == "PASS") { TP[type]++; PASSED[id] = 1 }
     else {
@@ -272,7 +277,7 @@ cmd_summary() {
              RESF, total, V["PASS"]+0, V["FAIL"]+0, V["ERROR"]+0, skipped
       printf "\"pass_rate\":%d,\"security_failures\":%d,\"free_cases\":%d,\"duration_ms\":%d,", \
              pct, NSEC+0, FREE+0, dur
-      printf "\"unverified_cases\":%d,\"unverified_roles\":\"%s\"}\n", unver, nosession
+      printf "\"unverified_cases\":%d,\"unverified_roles\":\"%s\",\"unjudged\":%d}\n", unver, nosession, NUNJ+0
       exit
     }
     if (QUIET) {
@@ -381,6 +386,14 @@ cmd_summary() {
       sect("     \035logged-out requests are denied anyway, so these verdicts are\030")
       sect("     \035unverified, not passed - run /test-setup to fix\030")
     }
+    if (NUNJ > 0) {
+      if (!warned) sect(""); warned = 1
+      sect(sprintf("  \034\014  %d api case%s could not be judged\030 \035(not counted as failures)\030", \
+           NUNJ, (NUNJ == 1 ? "" : "s")))
+      for (i = 1; i <= NUNJ && i <= 5; i++) sect(sprintf("     \035%s\030", UNJ[i]))
+      if (NUNJ > 5) sect(sprintf("     \035... and %d more\030", NUNJ - 5))
+      sect("     \035give each a method and an expect_code: tf.sh set <id> method=POST expect_code=2xx\030")
+    }
     if (skipped > 0) {
       if (!warned) sect("")
       sect(sprintf("  \034\014  %d destructive case%s skipped\030 \035(--allow-destructive to run)\030", \
@@ -402,7 +415,7 @@ cmd_summary() {
   ' "$res" | _tf_render "$ascii" "$usecolor"
 
   # Exit status, for CI gating. Recomputed rather than smuggled through the pipe.
-  awk -F, 'NR>1 && NF>=7 {
+  awk -F, 'NR>1 && NF>=7 && $7 != "UNJUDGED" {
              if ($7 != "PASS") { f++; if ($2 == "rbac" || $2 == "auth") s++ }
            }
            END { exit (s > 0 ? 2 : (f > 0 ? 1 : 0)) }' "$res"

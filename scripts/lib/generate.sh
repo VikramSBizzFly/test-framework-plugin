@@ -40,8 +40,8 @@ cmd_rbac() {
     echo "rbac: no restricted-page list given; guessing from names ($(printf '%s' "$priv" | grep -c . ) pages)" >&2
   fi
 
-  # HEADER plus the two state columns merge needs; merge routes each to its file
-  printf '%s,type,route,tags\n' "$HEADER"
+  # HEADER plus the state columns merge needs; merge routes each to its file
+  printf '%s,type,route,tags,method,expect_code\n' "$HEADER"
   n=0; m=0
   while IFS= read -r route; do
     [ -n "$route" ] || continue
@@ -51,7 +51,7 @@ cmd_rbac() {
     esac
     n=$((n + 1))
     probe="$(probe_url "$route")"
-    printf 'AUTH-%03d,%s,nobody,%s,%s,high,new,,page,%s,\n' \
+    printf 'AUTH-%03d,%s,nobody,%s,%s,high,new,,page,%s,,,\n' \
       "$n" \
       "$(csv_esc "$(area_of "$route")")" \
       "$(csv_esc "Open $probe without logging in")" \
@@ -66,7 +66,7 @@ cmd_rbac() {
     case "$route" in /api/*|*/api/*) ;; *) continue ;; esac
     a=$((a + 1))
     probe="$(probe_url "$route")"
-    printf 'API-%03d,%s,nobody,%s,%s,high,new,,api,%s,refused\n' \
+    printf 'API-%03d,%s,nobody,%s,%s,high,new,,api,%s,refused,GET,refused\n' \
       "$a" \
       "$(csv_esc "$(area_of "$route")")" \
       "$(csv_esc "Call $probe without logging in")" \
@@ -83,7 +83,7 @@ cmd_rbac() {
       case "$route" in */api/*|/api/*) continue ;; esac
       m=$((m + 1))
       probe="$(probe_url "$route")"
-      printf 'PERM-%s-%03d,%s,%s,%s,%s,high,new,,page,%s,\n' \
+      printf 'PERM-%s-%03d,%s,%s,%s,%s,high,new,,page,%s,,,\n' \
         "$(printf '%s' "$role" | tr 'a-z' 'A-Z' | cut -c1-4)" "$m" \
         "$(csv_esc "$(area_of "$route")")" \
         "$(csv_esc "$(who_label "$role")")" \

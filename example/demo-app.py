@@ -22,11 +22,16 @@ You only need Python for THIS demo app. The test framework itself does not
 need Python, or Node, or anything else.
 """
 
+import hashlib
+import hmac
 import http.server
 import urllib.parse
 import uuid
 
 SESSIONS = {}
+WEBHOOK_SECRET = b"whsec_demo"        # credentials.json "secrets": {"webhook": ...}
+POST_ONLY = {"/api/items", "/api/logout", "/api/webhook", "/api/2fa"}
+TWOFA_FAILS = {}                      # session id -> wrong codes so far
 USERS = {"a@x.com": ("pw1", "admin"), "u@x.com": ("pw2", "user")}
 
 LOGIN_PAGE = """<!doctype html><title>Login</title>
@@ -104,6 +109,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.reply(200, "<h1>Reports</h1><p>Q3 revenue: 4.2M</p>")
             return self.reply(200, "<h1>Access denied</h1><p>Ask an admin.</p>")
 
+        if path in POST_ONLY:
+            return self.reply(405, "method not allowed", [("Allow", "POST")])
+
         if path.startswith("/api/"):
             if role:
                 return self.reply(200, '{"ok": true}')
@@ -111,12 +119,52 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         return self.reply(404, "<h1>Not found</h1>")
 
+    def session_id(self):
+        for part in self.headers.get("Cookie", "").split(";"):
+            part = part.strip()
+            if part.startswith("sid="):
+                return part[4:]
+        return None
+
     def do_POST(self):
-        if urllib.parse.urlparse(self.path).path != "/login":
+        path = urllib.parse.urlparse(self.path).path
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length)
+
+        # POST-only JSON endpoints, for run-api's method/body/header cases.
+        if path == "/api/items":
+            if not self.who():
+                return self.reply(401, "unauthorized")
+            if b'"name"' not in raw:
+                return self.reply(422, '{"error": "name is required"}')
+            return self.reply(201, '{"id": 1}')
+
+        if path == "/api/logout":
+            SESSIONS.pop(self.session_id(), None)
+            return self.reply(204, "")
+
+        if path == "/api/webhook":
+            sent = self.headers.get("X-Signature", "")
+            want = hmac.new(WEBHOOK_SECRET, raw, hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(sent, want):
+                return self.reply(401, "bad signature")
+            return self.reply(200, '{"received": true}')
+
+        if path == "/api/2fa":
+            sid = self.session_id()
+            if not self.who():
+                return self.reply(401, "unauthorized")
+            if TWOFA_FAILS.get(sid, 0) >= 5:
+                return self.reply(429, "too many attempts")
+            if b'"code": "123456"' in raw:
+                return self.reply(200, '{"ok": true}')
+            TWOFA_FAILS[sid] = TWOFA_FAILS.get(sid, 0) + 1
+            return self.reply(401, "wrong code")
+
+        if path != "/login":
             return self.reply(404, "<h1>Not found</h1>")
 
-        length = int(self.headers.get("Content-Length", 0))
-        form = urllib.parse.parse_qs(self.rfile.read(length).decode())
+        form = urllib.parse.parse_qs(raw.decode())
         email = form.get("email", [""])[0]
         password = form.get("password", [""])[0]
 

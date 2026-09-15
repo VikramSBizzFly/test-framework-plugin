@@ -39,7 +39,7 @@ STATE="$CACHE/state.csv"
 # .cache/state.csv is the bookkeeping the runner needs and nobody wants to read.
 # Keyed by id, regenerable, never hand-edited.
 HEADER='id,area,who,what to do,what should happen,priority,status,notes'
-STATE_HEADER='id,type,route,tags,source_files,spec_file,last_run,last_result,pass_streak,flake_count,viewport'
+STATE_HEADER='id,type,route,tags,source_files,spec_file,last_run,last_result,pass_streak,flake_count,viewport,method,body,headers,expect_code,repeat'
 
 # Columns that live in testcases.csv. Everything else is routed to state.csv.
 HUMAN_COLS='id area who what to do what should happen priority status notes'

@@ -225,7 +225,8 @@ model shouldn't have to: CSV queries, route discovery, the RBAC matrix, HTTP
 execution, regression diffing, report rendering.
 
 It is one entry point and a handful of modules under `scripts/lib/`, one per
-concern: `store.sh` (the case store), `auth.sh` (sessions), `api.sh` (`run-api`),
+concern: `store.sh` (the case store), `integrity.sh` (validation, backups,
+`check`/`restore`), `auth.sh` (sessions), `api.sh` (`run-api`),
 `discovery.sh`, `generate.sh`, `report.sh`, `migrate.sh`, `xlsx.sh`, and the
 shared `core.sh`/`progress.sh`. Always call `tf.sh`; the modules are not
 commands.
@@ -238,6 +239,9 @@ tf.sh storage-state admin   # cookie jar -> Playwright session
 tf.sh xlsx                  # rebuild the workbook
 tf.sh xlsx --import         # pull hand edits out of the sheet
 tf.sh xlsx --status         # write verdicts back after a run
+tf.sh preflight             # app up, and every role's session really works
+tf.sh check                 # does the case store parse?
+tf.sh restore               # put back the last store that did
 tf.sh migrate               # force a migration (normally automatic)
 tf.sh version
 tf.sh help
