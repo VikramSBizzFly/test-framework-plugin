@@ -44,8 +44,9 @@ write the same shape with the storage entries under `origins`.
 
 If the app keeps its session in an `HttpOnly` cookie the browser cannot read,
 say so rather than writing a storage state that will not authenticate — a file
-that exists but does not work is worse than one that is missing, because
-`preflight` will report the role as ready.
+that exists but does not work is worse than one that is missing. `preflight`
+sends the storage state's cookies to the probe page and will catch a dead one,
+but it cannot see a session held only in `localStorage`.
 
 ## 4. Verify
 

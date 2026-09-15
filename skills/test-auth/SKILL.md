@@ -39,8 +39,13 @@ continue; blame the app only when a fresh session still fails.
 back and say what the person must do. Never try to solve or bypass one.
 
 **Verify before trusting.** A session that was never checked against a protected
-route is worse than none, because the run reports green. `tf.sh preflight` names
-any role without one.
+route is worse than none, because the run reports green. `tf.sh preflight` sends
+one real request per role, with that role's session, to `login.session_probe`
+(or `roles.<role>.probe`, falling back to `login.success_indicator`). A role is
+alive only on a 2xx that is not a login form. A dead role with credentials is
+logged in again once; anything still dead exits 3. If the probe page looks the
+same logged out, preflight says UNVERIFIABLE — point `session_probe` at a page
+that needs a login.
 
 ## Credentials
 

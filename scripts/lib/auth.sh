@@ -6,9 +6,19 @@
 
 # =================================================================== execution
 
-# preflight -- is the app up and does a login work? Fails fast so a down app
-# costs one request instead of a whole suite of failures.
+# preflight [--warn-only] -- is the app up, and is every role really logged in?
+#
+# Fails fast so a dead app, or a dead session, costs a few requests instead of a
+# whole suite of failures. A session file existing proves nothing: sessions
+# expire, and a run with an expired one looks logged out to every case -- so
+# every permission case "passes". Each role is therefore checked by sending a
+# real request with its session to a page only a logged-in user can open.
+#
+# A dead role with credentials is logged in again once, automatically. Anything
+# still dead -- or a probe page that cannot tell logged-in from logged-out --
+# exits 3, unless --warn-only.
 cmd_preflight() {
+  warn_only=0; [ "${1:-}" = "--warn-only" ] && warn_only=1
   assert_target_allowed
   base="$(json_get "$CREDS" base_url)"
   have curl || die3 "preflight: curl not found"
@@ -18,21 +28,196 @@ cmd_preflight() {
     5*)  die3 "preflight: $base returned $code. The app is up but erroring." ;;
   esac
   echo "preflight: $base -> $code"
-  # Two session artifacts, and a run needs both: the jar is what curl reads, the
-  # storage state is what every browser case reads. A role with only the jar
-  # runs the browser pass logged out, and a logged-out user is refused
-  # everything -- so every permission case "passes". Report the gap here.
+
+  mkdir -p "$CACHE"
+  bad=""
   for role in $(json_keys "$CREDS" roles 2>/dev/null); do
-    jar="$TESTS_DIR/.auth/$role.cookies"
-    state="$TESTS_DIR/.auth/$role.json"
-    if [ -f "$jar" ] && [ -f "$state" ]; then
-      echo "preflight: session present for $role"
-    elif [ -f "$jar" ]; then
-      echo "preflight: $role has a cookie jar but no browser session (run: tf.sh storage-state $role)" >&2
-    else
-      echo "preflight: no session for $role (run /test-setup)" >&2
-    fi
+    case "$role" in anonymous|nobody) continue ;; esac
+    _pf_role "$role" || bad="$bad $role"
   done
+  rm -f "$CACHE"/.pf-*."$$"
+
+  [ -z "$bad" ] && return 0
+  if [ "$warn_only" = 1 ]; then
+    echo "preflight: not ready:$bad (--warn-only, continuing)" >&2
+    return 0
+  fi
+  die3 "preflight: no working session for:$bad
+    Cases for these roles would run logged out and prove nothing. Log them in
+    (the login-broker agent, or /test-setup), then run preflight again."
+}
+
+# The page a role's session is proved against: the role's own probe, the
+# suite's, or the page login already treats as proof of success.
+_pf_probe_path() {
+  p="$(json_get "$CREDS" "roles.$1.probe" 2>/dev/null)"
+  [ -n "$p" ] || p="$(json_get "$CREDS" login.session_probe 2>/dev/null)"
+  [ -n "$p" ] || p="$(json_get "$CREDS" login.success_indicator 2>/dev/null)"
+  [ -n "$p" ] || p=/
+  printf '%s' "$p"
+}
+
+# _pf_role <role> -- check, recover once, report. Returns 1 if not usable.
+_pf_role() {
+  r="$1"; jar="$TESTS_DIR/.auth/$r.cookies"; state="$TESTS_DIR/.auth/$r.json"
+  probe="$(_pf_probe_path "$r")"
+
+  # A browser session made from the jar is free; make it before judging.
+  if [ -f "$jar" ] && [ ! -f "$state" ]; then
+    cmd_storage_state "$r" >/dev/null 2>&1 || :
+  fi
+
+  verdict="$(_pf_check "$r" "$probe")"
+  case "$verdict" in
+    alive*)
+      echo "preflight: $r alive (${verdict#alive })"; return 0 ;;
+    unverifiable*)
+      echo "preflight: $r UNVERIFIABLE -- $probe looks the same logged out. Set login.session_probe (or roles.$r.probe) in $CREDS to a page that needs a login." >&2
+      return 1 ;;
+  esac
+
+  user="$(json_get "$CREDS" "roles.$r.username" 2>/dev/null)"
+  pass="$(json_get "$CREDS" "roles.$r.password" 2>/dev/null)"
+  if [ -z "$user" ] || [ -z "$pass" ]; then
+    echo "preflight: $r DEAD (${verdict#dead: }) -- no credentials to log in again" >&2
+    return 1
+  fi
+  echo "preflight: $r DEAD (${verdict#dead: }) -- logging in again" >&2
+  if ( cmd_login "$r" ) >/dev/null 2>&1 && ( cmd_storage_state "$r" ) >/dev/null 2>&1; then
+    again="$(_pf_check "$r" "$probe")"
+    case "$again" in
+      alive*) echo "preflight: $r alive after re-login (${again#alive })"; return 0 ;;
+      unverifiable*) echo "preflight: $r logged in again, but $probe looks the same logged out -- set login.session_probe" >&2; return 1 ;;
+    esac
+    echo "preflight: $r still DEAD after re-login (${again#dead: })" >&2
+  else
+    echo "preflight: $r re-login failed -- the app likely needs a browser login (2FA, SSO, JS); use the login-broker agent" >&2
+  fi
+  return 1
+}
+
+# _pf_check <role> <probe> -- one line: "alive ...", "dead: ..." or
+# "unverifiable". Every session artifact the role has is checked, because the
+# API pass reads the jar and the browser pass reads the storage state: either
+# one dead is a run that is half logged out.
+_pf_check() {
+  r="$1"; probe="$2"; jar="$TESTS_DIR/.auth/$r.cookies"; state="$TESTS_DIR/.auth/$r.json"
+  if [ ! -f "$jar" ] && [ ! -f "$state" ]; then
+    echo "dead: no session files"; return
+  fi
+
+  jar_cookie=""; state_cookie=""
+  [ -f "$jar" ] && jar_cookie="$(_pf_jar_cookie "$jar")"
+  [ -f "$state" ] && state_cookie="$(_pf_state_cookie "$state")"
+  if [ -f "$jar" ] && [ -z "$jar_cookie" ]; then echo "dead: $(_pf_expiry "$jar" jar)"; return; fi
+  if [ -f "$state" ] && [ -z "$state_cookie" ]; then echo "dead: $(_pf_expiry "$state" state)"; return; fi
+
+  anon="$(_pf_anon "$probe")"
+  set -- $anon; acode="$1"; asize="$2"; aform="$3"
+  out=""
+  for which in jar state; do
+    if [ "$which" = jar ]; then c="$jar_cookie"; else c="$state_cookie"; fi
+    [ -n "$c" ] || continue
+    # The storage state made from this jar carries the same cookies: same answer.
+    [ "$which" = state ] && [ "$c" = "$jar_cookie" ] && continue
+    set -- $(_pf_request "$probe" "$c"); rcode="$1"; size="$2"; form="$3"
+    case "$rcode" in
+      2*) [ "$form" = login ] && { echo "dead: $which gets a login form at $probe ($rcode)"; return; } ;;
+      30*) echo "dead: $which is redirected away from $probe ($rcode)"; return ;;
+      *)  echo "dead: $which gets $rcode at $probe"; return ;;
+    esac
+    # Logged in and logged out look alike: this page proves nothing.
+    case "$acode" in
+      2*) if [ "$aform" != login ] && _pf_similar "$size" "$asize"; then echo "unverifiable"; return; fi ;;
+    esac
+    out="${out:+$out, }$which $rcode"
+  done
+  echo "alive probe $probe: $out"
+}
+
+# _pf_request <path> [cookie-header] -> "<code> <bytes> <login|page>"
+_pf_request() {
+  body="$CACHE/.pf-body.$$"
+  if [ -n "${2:-}" ]; then
+    code="$(curl -s -o "$body" -w '%{http_code}' --max-time 15 --max-redirs 0 \
+             -H "Cookie: $2" "$base$1" 2>/dev/null)"
+  else
+    code="$(curl -s -o "$body" -w '%{http_code}' --max-time 15 --max-redirs 0 "$base$1" 2>/dev/null)"
+  fi
+  [ -n "$code" ] || code=000
+  bytes="$(wc -c < "$body" 2>/dev/null | tr -d ' ')"; [ -n "$bytes" ] || bytes=0
+  kind=page
+  grep -qiE 'type=["'"'"']?password' "$body" 2>/dev/null && kind=login
+  rm -f "$body"
+  echo "$code $bytes $kind"
+}
+
+# One anonymous request per probe page, however many roles share it.
+_pf_anon() {
+  key="$CACHE/.pf-anon-$(printf '%s' "$1" | cksum | cut -d' ' -f1).$$"
+  [ -f "$key" ] || _pf_request "$1" > "$key"
+  cat "$key"
+}
+
+# Within 2% of each other: the same page, give or take a token or a timestamp.
+_pf_similar() {
+  [ "$1" -gt 0 ] && [ "$2" -gt 0 ] || return 1
+  d=$(( $1 - $2 )); [ "$d" -lt 0 ] && d=$(( 0 - d ))
+  [ $(( d * 50 )) -le "$1" ]
+}
+
+# Cookie header from a Netscape jar, leaving out anything already expired.
+_pf_jar_cookie() {
+  awk -v now="$(date +%s)" '
+    { sub(/\r$/, ""); sub(/^#HttpOnly_/, "") }
+    /^#/ || NF < 7 { next }
+    $5 != 0 && $5 < now { next }
+    { out = out (out == "" ? "" : "; ") $6 "=" $7 }
+    END { print out }' "$1"
+}
+
+# Cookie header from a Playwright storage state. Handles both the
+# one-cookie-per-line shape storage-state writes and a pretty-printed export.
+_pf_state_cookie() {
+  awk -v now="$(date +%s)" '
+    { doc = doc $0 " " }
+    function field(obj, k,   m) {
+      if (match(obj, "\"" k "\"[ \t]*:[ \t]*\"[^\"]*\"")) {
+        m = substr(obj, RSTART, RLENGTH); sub(/^[^:]*:[ \t]*"/, "", m); sub(/"$/, "", m); return m
+      }
+      if (match(obj, "\"" k "\"[ \t]*:[ \t]*-?[0-9.]+")) {
+        m = substr(obj, RSTART, RLENGTH); sub(/^[^:]*:[ \t]*/, "", m); return m
+      }
+      return ""
+    }
+    END {
+      i = index(doc, "\"cookies\""); if (!i) exit
+      rest = substr(doc, i)
+      j = index(rest, "\"origins\""); if (j) rest = substr(rest, 1, j)
+      while (match(rest, /\{[^{}]*\}/)) {
+        obj = substr(rest, RSTART, RLENGTH); rest = substr(rest, RSTART + RLENGTH)
+        if (index(obj, "\"name\"") == 0) continue
+        e = field(obj, "expires") + 0
+        if (e > 0 && e < now) continue
+        out = out (out == "" ? "" : "; ") field(obj, "name") "=" field(obj, "value")
+      }
+      print out
+    }' "$1"
+}
+
+# Why a session file has no usable cookie: how long ago the newest one expired.
+_pf_expiry() {
+  if [ "$2" = jar ]; then
+    newest="$(awk '{ sub(/^#HttpOnly_/, "") } /^#/ || NF < 7 { next } $5 > m { m = $5 } END { print m + 0 }' "$1")"
+  else
+    newest="$(grep -oE '"expires"[[:space:]]*:[[:space:]]*[0-9]+' "$1" | sed -E 's/.*:[[:space:]]*//' | sort -n | tail -1)"
+  fi
+  case "${newest:-0}" in
+    0) echo "$2 has no cookies" ;;
+    *) ago=$(( $(date +%s) - newest ))
+       if [ "$ago" -ge 86400 ]; then echo "$2 cookies expired $(( ago / 86400 ))d ago"
+       else echo "$2 cookies expired $(( ago / 3600 ))h ago"; fi ;;
+  esac
 }
 
 # login <role> -- establish a session with curl and save the cookie jar.
