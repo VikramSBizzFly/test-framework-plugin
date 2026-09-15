@@ -224,6 +224,12 @@ Claude's Bash tool, **not a dependency of your project**. It does everything the
 model shouldn't have to: CSV queries, route discovery, the RBAC matrix, HTTP
 execution, regression diffing, report rendering.
 
+It is one entry point and a handful of modules under `scripts/lib/`, one per
+concern: `store.sh` (the case store), `auth.sh` (sessions), `api.sh` (`run-api`),
+`discovery.sh`, `generate.sh`, `report.sh`, `migrate.sh`, `xlsx.sh`, and the
+shared `core.sh`/`progress.sh`. Always call `tf.sh`; the modules are not
+commands.
+
 ```sh
 tf.sh select --status new --priority high --cols id,todo --format plain
 tf.sh routes src/ > tests/.cache/routes.txt
