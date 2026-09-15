@@ -140,8 +140,8 @@ cmd_set() {
       *)        state="$state|$k=${a#*=}" ;;
     esac
   done
-  [ -n "$human" ] && _tf_apply "$CSV" "$id" "$human" 0
-  [ -n "$state" ] && _tf_apply "$STATE" "$id" "$state" 1
+  if [ -n "$human" ]; then _tf_apply "$CSV" "$id" "$human" 0 || die "set: $id was not changed"; fi
+  if [ -n "$state" ]; then _tf_apply "$STATE" "$id" "$state" 1 || die "set: $id was not changed"; fi
   return 0
 }
 
@@ -185,7 +185,7 @@ _tf_apply() {
     }
   ' "$_f" > "$_t"
   _rc=$?
-  if [ "$_rc" = 0 ]; then mv "$_t" "$_f"; else rm -f "$_t"; fi
+  if [ "$_rc" = 0 ]; then _tf_commit "$_t" "$_f" || return 1; else rm -f "$_t"; fi
   return 0
 }
 
@@ -215,92 +215,145 @@ cmd_setmany() {
       }
       END { exit (dirty ? 0 : 9) }
     ' "$_f" > "$_t"
-    if [ $? = 0 ]; then mv "$_t" "$_f"; else rm -f "$_t"; fi
+    if [ $? = 0 ]; then
+      _tf_commit "$_t" "$_f" || { rm -f "$upd"; die "setmany: $_f was not changed"; }
+    else rm -f "$_t"; fi
   done
   rm -f "$upd"
   return 0
 }
 
-# merge <newcases.csv> -- additive, and never destructive.
+# merge [--check] <newcases.csv|newcases.tsv> -- additive, and never destructive.
 #
 # Existing ids keep their `status` and `notes` (a verdict and a human comment
 # are not the generator's to overwrite) and get the rest of their definition
 # refreshed. New ids are appended, with a matching row created in state.csv.
 # Nothing is ever dropped, so regeneration is safe to re-run.
+#
+# The incoming file is checked before anything is touched: one row with the
+# wrong number of fields -- almost always an unquoted comma in hand-written
+# CSV -- rejects the whole file, with its line number, and the store is left
+# exactly as it was. Tab-separated input needs no quoting at all, which is why
+# agents are told to write it. Both files are built aside and validated before
+# either is replaced. `--check` stops there and reports what would change.
 cmd_merge() {
+  check=0; [ "${1:-}" = "--check" ] && { check=1; shift; }
   need_csv; need_state
-  new="$1"; [ -f "$new" ] || die "merge: no such file: $new"
-  tmp="$CSV.tmp.$$"
+  new="${1:-}"; [ -n "$new" ] && [ -f "$new" ] || die "merge: no such file: $new"
+  mkdir -p "$CACHE"
+  src="$CACHE/.merge-in.$$"; tmp="$CSV.tmp.$$"; stmp="$STATE.tmp.$$"
+  _tf_to_csv "$new" > "$src"
 
-  # 1. refresh definitions of ids we already have
-  awk -v newf="$new" "$AWKLIB"'
+  if ! _tf_validate_input "$src"; then
+    rm -f "$src"
+    die "merge: $new has malformed rows (above) -- nothing was merged.
+    A text field containing a comma must be quoted in CSV. Simpler: write the
+    file tab-separated (.tsv), where commas need no quoting."
+  fi
+
+  awk -v cur="$CSV" -v hdr="$HEADER" -v stf="$STATE" -v stmp="$stmp" "$AWKLIB"'
+    function canon(k) {
+      if (k == "todo" || k == "do" || k == "steps") return "what to do"
+      if (k == "expect" || k == "should" || k == "expected") return "what should happen"
+      if (k == "role") return "who"
+      if (k == "feature") return "area"
+      return k
+    }
     BEGIN {
       KEEP["status"] = 1; KEEP["notes"] = 1
-      if ((getline nh < newf) > 0) hdrmap(nh, NH)
-      while ((getline l < newf) > 0) {
-        csvsplit(l, NF_)
-        for (k in NH) NV[NF_[NH["id"]], k] = NF_[NH[k]]
-        NIDS[NF_[NH["id"]]] = 1
-      }
-    }
-    NR == 1 { hdrmap($0, H); print; next }
-    {
-      n = csvsplit($0, F); id = F[H["id"]]
-      if (id in NIDS) {
-        for (k in H) if (!(k in KEEP) && ((id SUBSEP k) in NV)) F[H[k]] = NV[id, k]
-        print csvjoin(F, n); updated++; next
-      }
-      print; kept++
-    }
-    END { print "merge: " updated + 0 " updated, " kept + 0 " untouched" > "/dev/stderr" }
-  ' "$CSV" > "$tmp" && mv "$tmp" "$CSV"
-
-  # 2. append genuinely new cases, mapping the incoming header onto ours
-  awk -v cur="$CSV" -v hdr="$HEADER" "$AWKLIB"'
-    BEGIN {
       nh = split(hdr, OUT, ",")
-      while ((getline l < cur) > 0) { if (++c == 1) { hdrmap(l, H); continue }
-        csvsplit(l, F); HAVE[F[H["id"]]] = 1 }
     }
-    NR == 1 { hdrmap($0, NH); next }
+    # --- the incoming file, read into memory in its own order
+    NR == 1 {
+      nn = csvsplit($0, A)
+      for (i = 1; i <= nn; i++) NH[canon(A[i])] = i
+      next
+    }
+    $0 == "" { next }
     {
-      n = csvsplit($0, F); id = F[NH["id"]]
-      if (id in HAVE) next
-      for (i = 1; i <= nh; i++) R[i] = (OUT[i] in NH) ? F[NH[OUT[i]]] : ""
-      if (R[7] == "") R[7] = "new"          # status
-      print csvjoin(R, nh)
-      added++
+      split("", F); csvsplit($0, F); id = F[NH["id"]]
+      if (id == "") { print "merge: line " NR " has no id, skipped" > "/dev/stderr"; next }
+      if (id in NIDS) { print "merge: " id " appears twice in the input; the first is used" > "/dev/stderr"; next }
+      NIDS[id] = ++norder; ORDER[norder] = id
+      for (k in NH) NV[id, k] = F[NH[k]]
     }
-    END { print "merge: " added + 0 " added" > "/dev/stderr" }
-  ' "$new" >> "$CSV"
-
-  # 3. give every case a state row (bookkeeping the runner will fill in)
-  stmp="$STATE.tmp.$$"
-  awk -v newf="$new" -v shdr="$STATE_HEADER" "$AWKLIB"'
-    BEGIN {
-      ns = split(shdr, SC, ",")
-      if ((getline nh < newf) > 0) hdrmap(nh, NH)
-      while ((getline l < newf) > 0) {
-        csvsplit(l, NF_); id = NF_[NH["id"]]
-        NIDS[id] = 1
-        for (k in NH) NV[id, k] = NF_[NH[k]]
-      }
-    }
-    NR == 1 { hdrmap($0, H); print; next }
-    { csvsplit($0, F); SEEN[F[H["id"]]] = 1; print }
     END {
-      for (id in NIDS) {
+      # --- testcases.csv: refresh existing ids, then append new ones
+      c = 0
+      while ((getline l < cur) > 0) {
+        if (++c == 1) { hdrmap(l, H); print l; continue }
+        if (l == "") continue
+        split("", F); n = csvsplit(l, F); id = F[H["id"]]
+        HAVE[id] = 1
+        if (id in NIDS) {
+          for (k in H) if (!(k in KEEP) && ((id SUBSEP k) in NV)) F[H[k]] = NV[id, k]
+          print csvjoin(F, n); updated++
+        } else { print l; kept++ }
+      }
+      close(cur)
+      for (j = 1; j <= norder; j++) {
+        id = ORDER[j]
+        if (id in HAVE) continue
+        for (i = 1; i <= nh; i++) R[i] = ((id SUBSEP OUT[i]) in NV) ? NV[id, OUT[i]] : ""
+        if (R[7] == "") R[7] = "new"          # status
+        print csvjoin(R, nh); added++
+      }
+
+      # --- state.csv: every case gets a bookkeeping row
+      c = 0
+      while ((getline l < stf) > 0) {
+        if (++c == 1) { ns = hdrmap(l, SH); split("", SC); csvsplit(l, SC); print l > stmp; continue }
+        if (l == "") continue
+        split("", F); csvsplit(l, F); SEEN[F[SH["id"]]] = 1
+        print l > stmp
+      }
+      close(stf)
+      for (j = 1; j <= norder; j++) {
+        id = ORDER[j]
         if (id in SEEN) continue
         for (i = 1; i <= ns; i++) {
           k = SC[i]
           R[i] = (k == "id") ? id : (((id SUBSEP k) in NV) ? NV[id, k] : "")
+          if ((k == "pass_streak" || k == "flake_count") && R[i] == "") R[i] = "0"
         }
-        if (R[9] == "") R[9] = "0"      # pass_streak
-        if (R[10] == "") R[10] = "0"    # flake_count
-        print csvjoin(R, ns)
+        print csvjoin(R, ns) > stmp
       }
+      close(stmp)
+      printf "merge: %d added, %d updated, %d untouched\n", added, updated, kept > "/dev/stderr"
     }
-  ' "$STATE" > "$stmp" && mv "$stmp" "$STATE"
+  ' "$src" > "$tmp"
+  rm -f "$src"
+
+  # Validate both before replacing either, so the pair never disagrees.
+  if ! _tf_validate "$tmp" || ! _tf_validate "$stmp"; then
+    rm -f "$tmp" "$stmp"
+    die "merge: the merged store would not parse -- nothing was written"
+  fi
+  if [ "$check" = 1 ]; then
+    rm -f "$tmp" "$stmp"; echo "merge --check: $new is well-formed" >&2; return 0
+  fi
+  _tf_commit "$tmp" "$CSV" || { rm -f "$stmp"; die "merge: nothing was written"; }
+  _tf_commit "$stmp" "$STATE" || die "merge: testcases.csv was updated but state.csv was not -- run: tf.sh check"
+}
+
+# _tf_to_csv <file> -- print the file as CSV. A header containing a tab means
+# tab-separated input: split on tabs, quote each field. Otherwise pass through.
+_tf_to_csv() {
+  if head -1 "$1" | grep -q "$(printf '\t')"; then
+    awk -F"$(printf '\t')" "$AWKLIB"'
+      { sub(/\r$/, ""); out = ""
+        for (i = 1; i <= NF; i++) out = out (i > 1 ? "," : "") csvq($i)
+        print out }' "$1"
+  else
+    sed 's/\r$//' "$1"
+  fi
+}
+
+# _tf_validate_input <csv> -- like _tf_validate, but any header with an id
+# column is acceptable: generators may send extra or reordered columns.
+_tf_validate_input() {
+  head -1 "$1" | tr ',' '\n' | grep -qx 'id' || { echo "  line 1: the header has no id column" >&2; return 1; }
+  _tf_validate "$1" "$(head -1 "$1" | sed 's/$//')"
 }
 
 # next-id <PREFIX>  -> PREFIX-007
@@ -347,5 +400,5 @@ cmd_prune() {
     }
     END { print "prune: " dup + 0 " duplicate(s)" > "/dev/stderr" }
   ' "$CSV" > "$tmp"
-  if [ "$apply" = "1" ]; then mv "$tmp" "$CSV"; else rm -f "$tmp"; fi
+  if [ "$apply" = "1" ]; then _tf_commit "$tmp" "$CSV" --allow-shrink; else rm -f "$tmp"; fi
 }

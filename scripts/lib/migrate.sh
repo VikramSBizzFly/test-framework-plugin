@@ -58,7 +58,12 @@ cmd_migrate() {
       moved++
     }
     END { print "migrate: " moved + 0 " cases moved" > "/dev/stderr" }
-  ' "$CSV" > "$tmp" && mv "$tmp" "$CSV" && mv "$stmp" "$STATE"
+  ' "$CSV" > "$tmp" || die "migrate: conversion failed; $CSV is unchanged"
+  # The old file is not a valid store (different header), so no shrink or
+  # backup logic applies to it -- the .old copy above is the backup.
+  _tf_validate "$tmp" && _tf_validate "$stmp" ||
+    { rm -f "$tmp" "$stmp"; die "migrate: the converted files do not parse; $CSV is unchanged"; }
+  mv "$tmp" "$CSV" && mv "$stmp" "$STATE" && _tf_stamp
   echo "migrate: old file kept at $CSV.old"
   tf_adopt_workbook
 }

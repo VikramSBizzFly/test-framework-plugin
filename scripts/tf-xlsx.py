@@ -496,6 +496,14 @@ def cmd_export():
     return 0
 
 
+def one_line(value):
+    """A cell as one line. The engine reads the CSV a line at a time, so a line
+    break typed into a cell (Alt+Enter) would split the record in two. Steps are
+    already pipe-separated by convention, so a break becomes one."""
+    lines = (value or "").splitlines()
+    return " | ".join(p.strip() for p in lines if p.strip())
+
+
 def cmd_import():
     """Workbook -> the human CSV the engine reads, plus the rows that are new.
 
@@ -533,9 +541,13 @@ def cmd_import():
         elif cid not in known:
             new_rows.append(row)
         seen.add(cid)
-        rows.append({k: (row.get(k) or "").strip() for k in CASE_HUMAN})
+        rows.append({k: one_line(row.get(k)) for k in CASE_HUMAN})
 
+    # A row deleted from the sheet stays in the suite, as promised above. The
+    # engine also refuses an import that would shrink the store.
     missing = [i for i in known if i not in seen]
+    for cid in missing:
+        rows.append({k: one_line(known[cid].get(k)) for k in CASE_HUMAN})
 
     with open(out_human, "w", encoding="utf-8", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=CASE_HUMAN, lineterminator="\n")
@@ -547,7 +559,7 @@ def cmd_import():
         w = csv.DictWriter(fh, fieldnames=CASE_HUMAN, lineterminator="\n")
         w.writeheader()
         for r in new_rows:
-            w.writerow({k: (r.get(k) or "").strip() for k in CASE_HUMAN})
+            w.writerow({k: one_line(r.get(k)) for k in CASE_HUMAN})
 
     print("xlsx: imported %d cases (%d new)" % (len(rows), len(new_rows)))
     if missing:

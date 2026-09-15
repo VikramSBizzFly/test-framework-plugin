@@ -77,7 +77,7 @@ cmd_xlsx() {
         if [ "$(wc -l < "$newf" 2>/dev/null || echo 1)" -gt 1 ]; then
           cmd_merge "$newf" >&2 || rc=$?
         fi
-        cp "$humanf" "$CSV" || rc=$?
+        _tf_commit "$humanf" "$CSV" || rc=$?
       else
         rc=$?
       fi

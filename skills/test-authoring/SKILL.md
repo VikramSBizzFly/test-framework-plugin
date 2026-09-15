@@ -8,7 +8,7 @@ description: Write test cases into tests/testcases.csv for this framework. Use w
 > `tf.sh` = `"$CLAUDE_PLUGIN_ROOT/scripts/tf.sh"` (not on PATH).
 
 Delegate authoring to the `case-author` agent, one call per feature, and API
-cases to `api-case-author`. Both write to a scratch CSV and `tf.sh merge`.
+cases to `api-case-author`. Both write to a scratch TSV and `tf.sh merge`.
 
 Cases come from three inputs, not one: the **page model** (every interactive
 element and its constraints), the **flows** in `tests/.cache/flows.txt` (the
@@ -59,9 +59,16 @@ CSV-quoting a multi-word column: `todo`/`do`/`steps`→"what to do",
 so hand edits and git stay clean. Field detail, feature coverage, and
 equivalence-class sampling: `references/schema.md`.
 
-Write new cases to a scratch CSV with the same 8-column header, then
-`tf.sh merge <file>`. Merge keeps existing IDs and never overwrites a
-`status` or `notes` a human already set — regeneration is always safe.
+Write new cases to a scratch **tab-separated** file with the same 8 column
+names as its header, then `tf.sh merge <file>`. Tabs, because hand-written
+CSV with an unquoted comma shifts every column after it; merge rejects such a
+file outright, with the line number, rather than store it. Merge keeps
+existing IDs and never overwrites a `status` or `notes` a human already set —
+regeneration is always safe.
+
+Never write `testcases.csv` or `state.csv` directly, with any tool — a hook
+blocks it. `tf.sh check` says whether the store parses; `tf.sh restore` puts
+back the last version that did.
 
 ## Destructive cases, and before finishing
 

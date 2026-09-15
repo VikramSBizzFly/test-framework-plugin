@@ -52,7 +52,7 @@ HUMAN_COLS='id area who what to do what should happen priority status notes'
 # always the matching version -- and fall back to the plugin root.
 TF_LIB="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)/lib"
 [ -f "$TF_LIB/core.sh" ] || TF_LIB="${CLAUDE_PLUGIN_ROOT:-}/scripts/lib"
-for _m in core progress store discovery generate auth api report migrate xlsx; do
+for _m in core progress store integrity discovery generate auth api report migrate xlsx; do
   [ -f "$TF_LIB/$_m.sh" ] || { echo "tf: missing module $TF_LIB/$_m.sh -- reinstall the plugin" >&2; exit 3; }
   # shellcheck disable=SC1090
   . "$TF_LIB/$_m.sh"
@@ -64,6 +64,7 @@ usage() {
 tf.sh - deterministic engine for the Claude test framework
 
 CSV        init-csv | select | set | setmany | merge | next-id | stats | prune | migrate
+store      check | restore
 excel      xlsx [--import|--status]
 discovery  routes | forms | schemas | hash | cache-check | impacted | cover
 generate   rbac
@@ -74,7 +75,10 @@ meta       version | help
   select --status new --priority high --who nobody --area admin \
          --cols id,todo,route --limit 20 --count --format plain
   set AUTH-002 status=failing notes="shows the page to everyone"
-  merge /tmp/new-cases.csv        additive; never overwrites status or notes
+  merge /tmp/new-cases.tsv        additive; never overwrites status or notes
+  merge --check /tmp/new.tsv      validate only; a malformed row rejects the file
+  check                           is the store readable? (line numbers if not)
+  restore [--from backup|xlsx]    put back the last store that parses
   migrate                         convert an old 20-column suite
   routes src/ > tests/.cache/routes.txt
   rbac tests/.cache/routes.txt > /tmp/rbac.csv
@@ -101,6 +105,16 @@ case "$sub" in
   *) tf_auto_migrate ;;
 esac
 
+# Then refuse to read or write a store that no longer parses. `check` and
+# `restore` are how you get out of that state, so they are not gated; neither
+# are the subcommands that never open the store.
+case "$sub" in
+  help|-h|--help|version|-v|--version|check|restore|init-csv|migrate) ;;
+  routes|forms|schemas|hash|cache-check|login|storage-state|preflight) ;;
+  junit|diff|render|summary|watch|latest|rbac) ;;
+  *) _tf_gate ;;
+esac
+
 case "$sub" in
   init-csv)  cmd_init_csv "$@" ;;
   select)    cmd_select "$@" ;;
@@ -110,6 +124,8 @@ case "$sub" in
   next-id)   cmd_next_id "$@" ;;
   stats)     cmd_stats "$@" ;;
   prune)     cmd_prune "$@" ;;
+  check)     cmd_check "$@" ;;
+  restore)   cmd_restore "$@" ;;
   routes)    cmd_routes "$@" ;;
   forms)     cmd_forms "$@" ;;
   schemas)   cmd_schemas "$@" ;;

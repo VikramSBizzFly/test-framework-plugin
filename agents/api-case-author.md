@@ -30,7 +30,10 @@ the `tags=refused` inversion.
      on an endpoint that should reject you is reported as the bug it is)
    - a required field missing
    - one wrong-type or out-of-range value per equivalence class
-4. Write to a scratch CSV with the 8-column header, then `tf.sh merge <file>`.
+4. Write a scratch **tab-separated** file (`/tmp/api.tsv`) whose first line is
+   the 8 column names plus `type` and `route` and `tags`, tab-separated, then
+   `tf.sh merge <file>`. Tabs mean a comma in text — or in `tags`, such as
+   `refused,smoke` — needs no quoting. A malformed row rejects the whole file.
    `tf.sh next-id API` for ids; never renumber.
 5. Tag anything that writes, deletes or acts in bulk `tags=destructive` and set
    `status=skipped`.
