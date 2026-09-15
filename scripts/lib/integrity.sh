@@ -23,8 +23,23 @@ BACKUP_EVERY_MIN=10   # at most one timestamped copy per file per ten minutes
 # multi-line record, or a half-quoted field, looks like to a line reader).
 # Problems go to stderr, at most five, each with its line number. Passing a
 # header accepts that header instead of HEADER.
+# _tf_header_for <store-path> -- the header a store file must carry. Keyed on
+# the store the file is, or will become: bugs.csv and its backups
+# (bugs.last.csv, bugs.<time>.csv) get the bug header, everything else the case
+# header.
+_tf_header_for() {
+  case "$(basename "$1")" in
+    bugs.*) echo "$BUG_HEADER" ;;
+    *)      echo "$HEADER" ;;
+  esac
+}
+
 _tf_validate() {
-  awk -v hdr="${2:-$HEADER}" "$AWKLIB"'
+  # Callers that do not name a header (backup, check, restore) are validating a
+  # store file in place, so its own name says which store it is.
+  _v_h="${2:-}"
+  [ -n "$_v_h" ] || _v_h="$(_tf_header_for "$1")"
+  awk -v hdr="$_v_h" "$AWKLIB"'
     function report(msg) { bad++; if (bad <= 5) print "  line " NR ": " msg > "/dev/stderr" }
     # field count, and whether a quote is still open at the end of the line
     function count(line,   i, c, n, inq) {
@@ -62,7 +77,7 @@ _tf_rows() { grep -c . "$1" 2>/dev/null || echo 0; }
 
 # _tf_stamp -- remember that the store, as it is right now, validated. The gate
 # then costs a cksum instead of a parse until something changes the files.
-_tf_stamp_value() { cat "$CSV" "$STATE" 2>/dev/null | cksum; }
+_tf_stamp_value() { cat "$CSV" "$STATE" "$BUGS" 2>/dev/null | cksum; }
 _tf_stamp() { mkdir -p "$CACHE"; _tf_stamp_value > "$CACHE/.integrity" 2>/dev/null || :; }
 
 # _tf_backup <store-file> -- keep a copy before it is replaced.
@@ -91,7 +106,9 @@ _tf_backup() {
 # untouched, and the return is 1.
 _tf_commit() {
   _c_tmp="$1"; _c_dest="$2"; _c_opt="${3:-}"
-  if ! _tf_validate "$_c_tmp" 2>"$_c_tmp.why"; then
+  # A temp file is named however its writer liked; what it must parse as is
+  # decided by the store it is about to replace.
+  if ! _tf_validate "$_c_tmp" "$(_tf_header_for "$_c_dest")" 2>"$_c_tmp.why"; then
     echo "tf: refusing to write $_c_dest -- the new version does not parse:" >&2
     cat "$_c_tmp.why" >&2
     rm -f "$_c_tmp" "$_c_tmp.why"
@@ -118,14 +135,19 @@ _tf_commit() {
 # broken, not the app.
 _tf_gate() {
   [ -f "$CSV" ] || return 0
-  head -1 "$CSV" | grep -q '^id,feature,role' && return 0   # old schema; migrate owns it
+  # An older schema is not damage -- it is migrate's to convert, and gating it
+  # would lock a user out of the suite that migration is about to repair.
+  head -1 "$CSV" | grep -q '^id,feature,role' && return 0   # 0.1-0.3, 20 columns
+  head -1 "$CSV" | grep -q '^id,area,who,' && return 0       # 0.4, 8 columns
   if [ -f "$CACHE/.integrity" ] && [ "$(_tf_stamp_value)" = "$(cat "$CACHE/.integrity" 2>/dev/null)" ]; then
     return 0
   fi
   mkdir -p "$CACHE"
-  for _g_f in "$CSV" "$STATE"; do
+  for _g_f in "$CSV" "$STATE" "$BUGS"; do
     [ -f "$_g_f" ] || continue
-    if ! _tf_validate "$_g_f" 2>"$CACHE/.gate.$$"; then
+    _g_h="$HEADER"
+    [ "$_g_f" = "$BUGS" ] && _g_h="$BUG_HEADER"
+    if ! _tf_validate "$_g_f" "$_g_h" 2>"$CACHE/.gate.$$"; then
       cat "$CACHE/.gate.$$" >&2; rm -f "$CACHE/.gate.$$"
       die3 "$_g_f is damaged, so nothing was read or written.
     Something other than tf.sh rewrote it. Run: tf.sh restore"
@@ -139,7 +161,7 @@ _tf_gate() {
 cmd_check() {
   need_csv
   rc=0
-  for f in "$CSV" "$STATE"; do
+  for f in "$CSV" "$STATE" "$BUGS"; do
     [ -f "$f" ] || continue
     if _tf_validate "$f"; then
       echo "check: $f ok ($(( $(_tf_rows "$f") - 1 )) rows)"
@@ -167,7 +189,7 @@ cmd_restore() {
     *) die "restore: unknown option $1" ;;
   esac
   ts="$(date +%Y%m%d-%H%M%S)"
-  for f in "$CSV" "$STATE"; do
+  for f in "$CSV" "$STATE" "$BUGS"; do
     [ -f "$f" ] || continue
     if [ "$from" = any ] && _tf_validate "$f" 2>/dev/null; then
       echo "restore: $f is fine, left alone"; continue

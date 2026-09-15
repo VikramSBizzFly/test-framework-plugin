@@ -56,7 +56,7 @@ joined() {
     NR == FNR {
       if (FNR == 1) { ns = hdrmap($0, SH); shdr = $0; next }
       n = csvsplit($0, S)
-      ST[S[SH["id"]]] = $0
+      ST[S[idcol(SH)]] = $0
       next
     }
     FNR == 1 {
@@ -69,7 +69,7 @@ joined() {
       next
     }
     {
-      n = csvsplit($0, F); id = F[H["id"]]
+      n = csvsplit($0, F); id = F[idcol(H)]
       line = $0
       m = csvsplit(shdr, SA)
       if (id in ST) { k = csvsplit(ST[id], SF)
@@ -158,9 +158,13 @@ cmd_set() {
   human=''; state=''
   for a in "$@"; do
     k="${a%%=*}"; k="$(alias_col "$k")"
+    v="${a#*=}"
+    # Any spelling of a status lands on the QA word, so `status=skipped` from an
+    # older prompt cannot put a second, lowercase status into the store.
+    [ "$k" = Status ] && v="$(qa_status "$v")"
     case " $HUMAN_COLS " in
-      *" $k "*) human="$human|$k=${a#*=}" ;;
-      *)        state="$state|$k=${a#*=}" ;;
+      *" $k "*) human="$human|$k=$v" ;;
+      *)        state="$state|$k=$v" ;;
     esac
   done
   if [ -n "$human" ]; then _tf_apply "$CSV" "$id" "$human" 0 || die "set: $id was not changed"; fi
@@ -176,7 +180,7 @@ _tf_apply() {
     NR == 1 { nh = hdrmap($0, H); nhdr = nh; print; next }
     {
       n = csvsplit($0, F)
-      if (F[H["id"]] == id) {
+      if (F[idcol(H)] == id) {
         na = split(assigns, A, "|"); changed = 0
         for (i = 1; i <= na; i++) {
           if (A[i] == "") continue
@@ -193,7 +197,7 @@ _tf_apply() {
     END {
       if (!found && create) {
         for (i = 1; i <= nhdr; i++) R[i] = ""
-        R[H["id"]] = id
+        R[idcol(H)] = id
         na = split(assigns, A, "|")
         for (i = 1; i <= na; i++) {
           if (A[i] == "") continue
@@ -215,19 +219,38 @@ _tf_apply() {
 # bulk-set from stdin: lines of "id col=value col=value"
 cmd_setmany() {
   need_csv; need_state
-  upd="$CACHE/.setmany.$$"; mkdir -p "$CACHE"; cat > "$upd"
+  upd="$CACHE/.setmany.$$"; mkdir -p "$CACHE"
+  # Resolve each key through alias_col, exactly as `set` does, so a caller can
+  # write `status=Pass actual=HTTP+200` against the ten visible column labels.
+  # Keys never contain a space; values encode theirs as `+`.
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    [ -n "$_line" ] || continue
+    _out="${_line%% *}"
+    _rest="${_line#"$_out"}"
+    for _kv in $_rest; do
+      _k="${_kv%%=*}"; _v="${_kv#*=}"
+      _k="$(alias_col "$_k")"
+      # Decode, normalise, re-encode: "Not Run" has a space, and a bare space
+      # here would split the value into a second, key-less token.
+      [ "$_k" = Status ] && _v="$(qa_status "$(printf '%s' "$_v" | tr '+' ' ')" | tr ' ' '+')"
+      _k="$(printf '%s' "$_k" | tr ' ' '\001')"
+      _out="$_out $_k=$_v"
+    done
+    printf '%s\n' "$_out"
+  done > "$upd"
   for _f in "$CSV" "$STATE"; do
     _t="$_f.tmp.$$"
     awk -v upd="$upd" "$AWKLIB"'
       BEGIN { while ((getline l < upd) > 0) { split(l, p, " "); U[p[1]] = l } }
       NR == 1 { hdrmap($0, H); print; next }
       {
-        n = csvsplit($0, F); id = F[H["id"]]
+        n = csvsplit($0, F); id = F[idcol(H)]
         if (id in U) {
           np = split(U[id], P, " "); changed = 0
           for (i = 2; i <= np; i++) {
             k = substr(P[i], 1, index(P[i], "=") - 1)
             v = substr(P[i], index(P[i], "=") + 1)
+            gsub(/\001/, " ", k)
             gsub(/\+/, " ", v)
             if ((k in H) && F[H[k]] != v) { F[H[k]] = v; changed = 1 }
           }
@@ -275,16 +298,51 @@ cmd_merge() {
   fi
 
   awk -v cur="$CSV" -v hdr="$HEADER" -v stf="$STATE" -v stmp="$stmp" "$AWKLIB"'
-    function canon(k) {
-      if (k == "todo" || k == "do" || k == "steps") return "what to do"
-      if (k == "expect" || k == "should" || k == "expected") return "what should happen"
-      if (k == "role") return "who"
-      if (k == "feature") return "area"
+    # The same one-word aliases alias_col accepts, so an authoring agent can
+    # write a TSV header of short names -- or the names from before 1.0.
+    function canon(k,   l) {
+      l = tolower(k)
+      if (l == "id" || l == "test case id")                     return "Test Case ID"
+      if (l == "module" || l == "area" || l == "feature")       return "Module"
+      if (l == "scenario" || l == "test scenario")              return "Test Scenario"
+      if (l == "description" || l == "desc" || l == "notes" || l == "test description") return "Test Description"
+      if (l == "preconditions" || l == "precondition" || l == "pre") return "Preconditions"
+      if (l == "steps" || l == "todo" || l == "do" || l == "test case steps" || l == "what to do") return "Test Case Steps"
+      if (l == "data" || l == "testdata" || l == "test data")   return "Test Data"
+      if (l == "expected" || l == "expect" || l == "should" || l == "expected result" || l == "what should happen") return "Expected Result"
+      if (l == "actual" || l == "result" || l == "actual result") return "Actual Result"
+      if (l == "status")                                         return "Status"
+      if (l == "who" || l == "role")                             return "role"
       return k
     }
+    # Status words from any era, onto the QA words.
+    function qaword(s,   l) {
+      l = tolower(s)
+      if (l == "" || l == "new" || l == "not run")               return "Not Run"
+      if (l == "pass" || l == "passing" || l == "passed")        return "Pass"
+      if (l == "fail" || l == "failing" || l == "failed")        return "Fail"
+      if (l == "blocked" || l == "error" || l == "unjudged")     return "Blocked"
+      if (l == "flaky")                                          return "Flaky"
+      if (l == "skip" || l == "skipped")                         return "Skipped"
+      return s
+    }
+    # No role column in the input: read one out of the Preconditions a person
+    # would write, so "Logged in as admin" still runs as admin.
+    function roleof(pre,   l) {
+      l = tolower(pre)
+      if (l == "" || l ~ /not logged in|logged out|anonymous|no session|nobody/) return "nobody"
+      if (match(l, /logged in as (an? )?[a-z0-9_-]+/)) {
+        l = substr(l, RSTART, RLENGTH); sub(/^logged in as (an? )?/, "", l); return l
+      }
+      return ""
+    }
     BEGIN {
-      KEEP["status"] = 1; KEEP["notes"] = 1
+      # A re-merge refreshes what authoring owns and never touches what a run or
+      # a person owns: the verdict, what the run saw, and the description a
+      # tester may have rewritten.
+      KEEP["Status"] = 1; KEEP["Actual Result"] = 1; KEEP["Test Description"] = 1
       nh = split(hdr, OUT, ",")
+      for (i = 1; i <= nh; i++) if (OUT[i] == "Status") STATUSI = i
     }
     # --- the incoming file, read into memory in its own order
     NR == 1 {
@@ -294,11 +352,14 @@ cmd_merge() {
     }
     $0 == "" { next }
     {
-      split("", F); csvsplit($0, F); id = F[NH["id"]]
+      split("", F); csvsplit($0, F); id = F[idcol(NH)]
       if (id == "") { print "merge: line " NR " has no id, skipped" > "/dev/stderr"; next }
       if (id in NIDS) { print "merge: " id " appears twice in the input; the first is used" > "/dev/stderr"; next }
       NIDS[id] = ++norder; ORDER[norder] = id
       for (k in NH) NV[id, k] = F[NH[k]]
+      if (((id SUBSEP "Status") in NV)) NV[id, "Status"] = qaword(NV[id, "Status"])
+      if (!((id SUBSEP "role") in NV) || NV[id, "role"] == "")
+        NV[id, "role"] = roleof(NV[id, "Preconditions"])
     }
     END {
       # --- testcases.csv: refresh existing ids, then append new ones
@@ -306,7 +367,7 @@ cmd_merge() {
       while ((getline l < cur) > 0) {
         if (++c == 1) { hdrmap(l, H); print l; continue }
         if (l == "") continue
-        split("", F); n = csvsplit(l, F); id = F[H["id"]]
+        split("", F); n = csvsplit(l, F); id = F[idcol(H)]
         HAVE[id] = 1
         if (id in NIDS) {
           for (k in H) if (!(k in KEEP) && ((id SUBSEP k) in NV)) F[H[k]] = NV[id, k]
@@ -318,7 +379,7 @@ cmd_merge() {
         id = ORDER[j]
         if (id in HAVE) continue
         for (i = 1; i <= nh; i++) R[i] = ((id SUBSEP OUT[i]) in NV) ? NV[id, OUT[i]] : ""
-        if (R[7] == "") R[7] = "new"          # status
+        if (STATUSI && R[STATUSI] == "") R[STATUSI] = "Not Run"
         print csvjoin(R, nh); added++
       }
 
@@ -327,7 +388,7 @@ cmd_merge() {
       while ((getline l < stf) > 0) {
         if (++c == 1) { ns = hdrmap(l, SH); split("", SC); csvsplit(l, SC); print l > stmp; continue }
         if (l == "") continue
-        split("", F); csvsplit(l, F); SEEN[F[SH["id"]]] = 1
+        split("", F); csvsplit(l, F); SEEN[F[idcol(SH)]] = 1
         print l > stmp
       }
       close(stf)
@@ -375,7 +436,10 @@ _tf_to_csv() {
 # _tf_validate_input <csv> -- like _tf_validate, but any header with an id
 # column is acceptable: generators may send extra or reordered columns.
 _tf_validate_input() {
-  head -1 "$1" | tr ',' '\n' | grep -qx 'id' || { echo "  line 1: the header has no id column" >&2; return 1; }
+  # The id column goes by its visible label or its short name; merge's canon()
+  # accepts either, so the gate must too.
+  head -1 "$1" | tr -d '\r' | tr ',' '\n' | grep -qix 'id\|test case id' || {
+    echo "  line 1: the header has no id column (Test Case ID, or id)" >&2; return 1; }
   _tf_validate "$1" "$(head -1 "$1" | tr -d '\r')"
 }
 
@@ -385,7 +449,7 @@ cmd_next_id() {
   p="$1"
   awk -v p="$p" "$AWKLIB"'
     NR == 1 { hdrmap($0, H); next }
-    { csvsplit($0, F); id = F[H["id"]]
+    { csvsplit($0, F); id = F[idcol(H)]
       if (index(id, p "-") == 1) { n = substr(id, length(p) + 2) + 0; if (n > max) max = n } }
     END { printf "%s-%03d\n", p, max + 1 }
   ' "$CSV"
@@ -396,12 +460,12 @@ cmd_stats() {
   joined | awk "$AWKLIB"'
     NR == 1 { hdrmap($0, H); next }
     { csvsplit($0, F); total++
-      st[F[H["status"]]]++; ty[F[H["type"]]]++; pr[F[H["priority"]]]++ }
+      st[F[H["Status"]]]++; ty[F[H["type"]]]++; ro[F[H["role"]]]++ }
     END {
       printf "total %d\n", total
-      printf "status"; for (k in st) printf " %s=%d", (k == "" ? "new" : k), st[k]; printf "\n"
+      printf "status"; for (k in st) printf " %s=%d", (k == "" ? "Not Run" : k), st[k]; printf "\n"
       printf "type";   for (k in ty) printf " %s=%d", (k == "" ? "page" : k), ty[k]; printf "\n"
-      printf "prio";   for (k in pr) printf " %s=%d", k, pr[k]; printf "\n"
+      printf "role";   for (k in ro) printf " %s=%d", (k == "" ? "nobody" : k), ro[k]; printf "\n"
     }
   '
 }
@@ -416,9 +480,9 @@ cmd_prune() {
     NR == 1 { hdrmap($0, H); print; next }
     {
       csvsplit($0, F)
-      k = F[H["who"]] "|" F[H["what to do"]] "|" F[H["what should happen"]]
-      if (k in seen) { dup++; print "duplicate: " F[H["id"]] " same as " seen[k] > "/dev/stderr"; if (apply) next }
-      else seen[k] = F[H["id"]]
+      k = F[H["Preconditions"]] "|" F[H["Test Case Steps"]] "|" F[H["Expected Result"]]
+      if (k in seen) { dup++; print "duplicate: " F[idcol(H)] " same as " seen[k] > "/dev/stderr"; if (apply) next }
+      else seen[k] = F[idcol(H)]
       print
     }
     END { print "prune: " dup + 0 " duplicate(s)" > "/dev/stderr" }

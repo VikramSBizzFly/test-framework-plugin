@@ -27,7 +27,7 @@ and how `run-api` judges them.
 3. Generate, per endpoint, a small deliberate set — not one case per field:
    - the happy path
    - called with **no session**, when the endpoint requires auth
-     (`who=nobody`, `expect_code=refused`)
+     (`role=nobody`, Preconditions "Not logged in", `expect_code=refused`)
    - a required field missing (`expect_code=4xx`)
    - one wrong-type or out-of-range value per equivalence class
    - where they exist: a signed and a wrongly signed webhook, a brute-force
@@ -44,7 +44,7 @@ and how `run-api` judges them.
    a comma in text, a JSON body or `tags` needs no quoting. A malformed row
    rejects the whole file. `tf.sh next-id API` for ids; never renumber.
 6. Tag anything that writes, deletes or acts in bulk `tags=destructive` and set
-   `status=skipped`.
+   `status=Skipped`.
 
 ## The routing rule, which you must not bend
 

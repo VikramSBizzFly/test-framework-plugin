@@ -9,7 +9,7 @@ break?", "what changed?". Then: lead with the verdict, then what changed, then
 what needs a human.
 
 A regression outranks a pre-existing failure. Within regressions, order by
-blast radius: a permission case (`who=nobody` or a lower role reaching a
+blast radius: a permission case (`role=nobody` or a lower role reaching a
 route it shouldn't) means a real user can reach something they should not —
 that goes first, always, above any broken button.
 

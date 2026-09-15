@@ -20,14 +20,14 @@ cmd_cost() {
     function bucket(type, status, spec) {
       if (type == "api")        return "api"
       if (spec != "")           return "spec"
-      if (status == "skipped")  return "skip"
-      if (status == "passing" || status == "failing") return "replay"
+      if (status == "Skipped")  return "skip"
+      if (status == "Pass" || status == "Fail" || status == "Flaky") return "replay"
       return "compile"
     }
     NR == 1 { hdrmap($0, H); next }
     {
       csvsplit($0, F)
-      b = bucket(F[H["type"]], F[H["status"]], F[H["spec_file"]])
+      b = bucket(F[H["type"]], F[H["Status"]], F[H["spec_file"]])
       N[b]++; total++
       if (b == "compile") { r = F[H["route"]]
         if (r != "" && !(r in ROUTE)) { ROUTE[r] = 1; nroutes++ } }
@@ -413,6 +413,12 @@ cmd_summary() {
     for (i = 1; i <= NL; i++) print LINES[i]
   }
   ' "$res" | _tf_render "$ascii" "$usecolor"
+
+  # Open bugs are not a verdict on this run, so they sit under the panel rather
+  # than inside it -- and never change the exit status. Panel only: --quiet is
+  # promised as one line, and --json is parsed by CI, where a stray line of text
+  # would break the job rather than inform it.
+  [ "$want_json" = 0 ] && [ "$quiet" = 0 ] && _bug_summary_lines
 
   # Exit status, for CI gating. Recomputed rather than smuggled through the pipe.
   awk -F, 'NR>1 && NF>=7 && $7 != "UNJUDGED" {

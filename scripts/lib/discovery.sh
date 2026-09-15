@@ -101,7 +101,7 @@ cmd_impacted() {
       n = split(F[H["source_files"]], SF, ";")
       for (i = 1; i <= n; i++) {
         if (SF[i] == "") continue
-        for (c in CH) if (index(c, SF[i]) > 0 || index(SF[i], c) > 0) { print F[H["id"]]; next }
+        for (c in CH) if (index(c, SF[i]) > 0 || index(SF[i], c) > 0) { print F[idcol(H)]; next }
       }
     }
   ' "$CACHE/.imp.$$" | sort -u

@@ -21,13 +21,13 @@ list and worked examples. Do not improvise a verb that is not in the grammar.
    compile nothing for this route and say so — that route needs `page-modeler`
    first.
 2. Read the cases with
-   `tf.sh select --route <route> --type page --cols id,who,route,todo,expect --format plain`.
+   `tf.sh select --route <route> --type page --cols id,role,route,preconditions,steps,data,expected --format plain`.
    Never `cat` `tests/testcases.csv`.
 3. For each case, emit `tests/.cache/recipes/<id>.rcp`: the action lines, then
    the trailing `expect` line(s). One file per case.
 4. Write the path back with `tf.sh setmany` —
    `spec_file=tests/.cache/recipes/<id>.rcp`. **Leave `status` alone**: it stays
-   `new`. Compiling is not running; only a real pass earns `passing`.
+   `Not Run`. Compiling is not running; only a real pass earns `Pass`.
 
 ## The rules that dominate cost
 

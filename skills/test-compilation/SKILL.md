@@ -16,7 +16,7 @@ here to compile **every** case on that route — this step never opens a
 browser and never calls the Playwright MCP.
 
 For each `page` row whose route has a page model: read the model, read the
-case's `what to do`/`what should happen`, emit `tests/.cache/recipes/<id>.rcp`.
+case's **Test Case Steps**, **Test Data** and **Expected Result**, emit `tests/.cache/recipes/<id>.rcp`.
 See `references/grammar.md` for the full verb list and worked examples,
 including how to judge a rendered permission failure.
 
@@ -49,8 +49,8 @@ write a literal username or password into a recipe file — recipes land in
 ## After compiling
 
 Write `spec_file=tests/.cache/recipes/<id>.rcp` back with `tf.sh setmany`.
-Leave `status` alone — it stays `new`; compiling isn't running, so only a
-real pass under `test-execution` earns `status=passing`. Presence of
-`spec_file` on a `new` row is what tells execution "compiled, ready to
+Leave `status` alone — it stays `Not Run`; compiling isn't running, so only a
+real pass under `test-execution` earns `status=Pass`. Presence of
+`spec_file` on a `Not Run` row is what tells execution "compiled, ready to
 replay" instead of "needs compiling first." A route with no page model yet
 compiles nothing; hand that route to `page-modeler` first.

@@ -40,8 +40,10 @@ cmd_rbac() {
     echo "rbac: no restricted-page list given; guessing from names ($(printf '%s' "$priv" | grep -c . ) pages)" >&2
   fi
 
-  # HEADER plus the state columns merge needs; merge routes each to its file
-  printf '%s,type,route,tags,method,expect_code\n' "$HEADER"
+  # HEADER plus the state columns merge needs; merge routes each to its file.
+  # Every generated case is a permission boundary, so every one is tagged
+  # `smoke`: that tag is what a bare /test-run falls back to.
+  printf '%s,type,route,tags,role,method,expect_code\n' "$HEADER"
   n=0; m=0
   while IFS= read -r route; do
     [ -n "$route" ] || continue
@@ -51,11 +53,12 @@ cmd_rbac() {
     esac
     n=$((n + 1))
     probe="$(probe_url "$route")"
-    printf 'AUTH-%03d,%s,nobody,%s,%s,high,new,,page,%s,,,\n' \
+    printf 'AUTH-%03d,%s,%s,,Not logged in,%s,,%s,,Not Run,page,%s,smoke,nobody,,\n' \
       "$n" \
       "$(csv_esc "$(area_of "$route")")" \
-      "$(csv_esc "Open $probe without logging in")" \
-      "$(csv_esc "Should not open - sends me to the login page")" \
+      "$(csv_esc "Logged-out visitor opens $probe")" \
+      "$(csv_esc "Open $probe")" \
+      "$(csv_esc "Sends me to the login page")" \
       "$probe"
   done < "$routes_file"
 
@@ -66,30 +69,32 @@ cmd_rbac() {
     case "$route" in /api/*|*/api/*) ;; *) continue ;; esac
     a=$((a + 1))
     probe="$(probe_url "$route")"
-    printf 'API-%03d,%s,nobody,%s,%s,high,new,,api,%s,refused,GET,refused\n' \
+    printf 'API-%03d,%s,%s,,Not logged in,%s,,%s,,Not Run,api,%s,"refused,smoke",nobody,GET,refused\n' \
       "$a" \
       "$(csv_esc "$(area_of "$route")")" \
-      "$(csv_esc "Call $probe without logging in")" \
-      "$(csv_esc "Should be refused")" \
+      "$(csv_esc "Logged-out call to $probe")" \
+      "$(csv_esc "Call $probe")" \
+      "$(csv_esc "The request is refused")" \
       "$probe"
   done < "$routes_file"
 
   [ -n "$priv" ] || return 0
   for role in $roles; do
     [ "$role" = "$owner" ] && continue
-    printf '%s
-' "$priv" | while IFS= read -r route; do
+    printf '%s\n' "$priv" | while IFS= read -r route; do
       [ -n "$route" ] || continue
       case "$route" in */api/*|/api/*) continue ;; esac
       m=$((m + 1))
       probe="$(probe_url "$route")"
-      printf 'PERM-%s-%03d,%s,%s,%s,%s,high,new,,page,%s,,,\n' \
+      label="$(who_label "$role")"
+      printf 'PERM-%s-%03d,%s,%s,,%s,%s,,%s,,Not Run,page,%s,smoke,%s,,\n' \
         "$(printf '%s' "$role" | tr 'a-z' 'A-Z' | cut -c1-4)" "$m" \
         "$(csv_esc "$(area_of "$route")")" \
-        "$(csv_esc "$(who_label "$role")")" \
-        "$(csv_esc "Log in as $(who_label "$role") and open $probe")" \
-        "$(csv_esc "Should not open - I am not allowed to see this")" \
-        "$probe"
+        "$(csv_esc "A $label opens $probe")" \
+        "$(csv_esc "Logged in as $label")" \
+        "$(csv_esc "Open $probe")" \
+        "$(csv_esc "Refused - a $label is not allowed to see this")" \
+        "$probe" "$role"
     done
   done
 }

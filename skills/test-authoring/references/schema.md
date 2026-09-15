@@ -1,4 +1,4 @@
-# testcases.csv schema and field detail
+# Test case columns and field detail
 
 > `tf.sh` = `"$CLAUDE_PLUGIN_ROOT/scripts/tf.sh"` (not on PATH).
 
@@ -35,53 +35,81 @@ those rows by hand. It already assigns `page` to every route it walks and
 
 ## Columns
 
-Human file, `tests/testcases.csv` (query/write these):
+The visible store is the QA team's layout -- the **Test Cases** sheet of
+`tests/testcases.xlsx`, and `tests/.cache/testcases.csv` beneath it. Query and
+write these:
 
 ```
-id,area,who,what to do,what should happen,priority,status,notes
+Test Case ID,Module,Test Scenario,Test Description,Preconditions,Test Case Steps,Test Data,Expected Result,Actual Result,Status
 ```
 
-- **`id`** — `AREA-NNN`, allocated with `tf.sh next-id <PREFIX>`. **Stable
-  forever.** Never renumber; results and specs are keyed on it.
-- **`area`** — the feature this case belongs to. Alias `feature`.
-- **`who`** — `nobody` for anonymous, `normal user` for a default account,
-  `admin` or the role's own name for anything privileged. Alias `role`.
-- **`what to do`** — plain English, no code, no selectors: "Log in as normal
-  user, open the invoice page, click New, fill Amount with 0, click Save."
-  A non-technical reader should be able to follow it by hand. Aliases
-  `todo`/`do`/`steps`.
-- **`what should happen`** — one observable outcome, in the words a user
-  would use: "Should show an error saying the amount must be greater than
-  zero." Not a paragraph, not an assertion in code. Aliases
-  `expect`/`should`/`expected`.
-- **`priority`** — `high` (must work, bare `/test-run` only executes these)
-  · `medium` (core) · `low` (edge case).
-- **`status`** — leave `new`; the runner owns it from then on. Values are
-  `new` / `passing` / `failing` / `flaky` / `skipped`. `flaky` is set by triage
-  after three verdict flips with no source change (see the **test-triage**
-  skill); it is excluded from the gating verdict but never dropped or hidden.
-- **`notes`** — anything a human wants to remember. Never touched by a run
-  unless someone hand-edits it.
+Every column has a one-word alias, so a TSV header or `--cols` never needs
+shell quoting: `id module scenario description preconditions steps data
+expected actual status`.
+
+- **Test Case ID** (`id`) -- `AREA-NNN`, allocated with `tf.sh next-id
+  <PREFIX>`. **Stable forever.** Never renumber; results, specs and bugs are
+  keyed on it.
+- **Module** (`module`) -- the feature this case belongs to.
+- **Test Scenario** (`scenario`) -- one line naming what is being tested, as a
+  heading a tester would scan: "Admin creates an invoice with a zero amount".
+- **Test Description** (`description`) -- why the case exists, or anything a
+  person wants to remember. Optional. A re-merge never overwrites it.
+- **Preconditions** (`preconditions`) -- the state before step one, in words:
+  "Not logged in", "Logged in as admin", "Logged in as admin; at least one
+  invoice exists". **The login part is read by the engine**: "Not logged in"
+  runs without a session and "Logged in as <role>" runs as that role -- unless
+  a `role` column says otherwise.
+- **Test Case Steps** (`steps`) -- plain English, no code, no selectors: "Open
+  the invoice page, click New, fill Amount with 0, click Save." A non-technical
+  reader should be able to follow it by hand. Multiple steps separate with `|`
+  or with numbered sentences, never a line break.
+- **Test Data** (`data`) -- the specific inputs, when they matter: "Amount: 0",
+  "email: not-an-email". Empty for most cases.
+- **Expected Result** (`expected`) -- one observable outcome, in the words a
+  user would use: "An error says the amount must be greater than zero." Not a
+  paragraph, not an assertion in code.
+- **Actual Result** (`actual`) -- **leave empty.** The runner writes what it saw:
+  `HTTP 401`, or one sentence for a page. A re-merge never overwrites it.
+- **Status** (`status`) -- leave empty or `Not Run`; the runner owns it. Values
+  are `Not Run` / `Pass` / `Fail` / `Blocked` / `Flaky` / `Skipped`. `Blocked`
+  means the run could not judge it (the request never completed); `Flaky` is set
+  by triage after three verdict flips with no source change (see the
+  **test-triage** skill) and is excluded from the gating verdict but never
+  dropped or hidden.
+
+There is no priority column. What a bare `/test-run` falls back to is the
+`smoke` tag -- give it to the cases that must always work.
 
 Bookkeeping file, `tests/.cache/state.csv` (never hand-edit; `tf.sh set`
-routes non-human fields here automatically):
+routes non-visible fields here automatically):
 
 ```
-id,type,route,tags,source_files,spec_file,last_run,last_result,pass_streak,flake_count,viewport,method,body,headers,expect_code,repeat
+id,type,route,tags,source_files,spec_file,last_run,last_result,pass_streak,flake_count,viewport,method,body,headers,expect_code,repeat,role
 ```
 
-`method`, `body`, `headers`, `expect_code` and `repeat` describe the request an
-`api` case sends; see `api-contracts.md`. An older state file gains these
-columns, empty, the first time `tf.sh` touches it.
+- **`role`** -- the session a case runs with: `nobody`, or a key from
+  `credentials.json` (`admin`, `user`, ...). Set it explicitly in the authoring
+  TSV when Preconditions would be ambiguous; otherwise merge derives it from
+  Preconditions. The alias `who` resolves here.
+- `method`, `body`, `headers`, `expect_code` and `repeat` describe the request an
+  `api` case sends; see `api-contracts.md`.
 
-`route` groups cases for browser page-model reuse, so get it right — a wrong
+`route` groups cases for browser page-model reuse, so get it right -- a wrong
 route means a wasted page model. `tags` is comma-separated; `destructive`,
-`smoke`, `refused` and `ends-session` are load-bearing. `source_files` is semicolon-separated, from
-discovery, and powers `--changed`.
+`smoke`, `refused` and `ends-session` are load-bearing. `source_files` is
+semicolon-separated, from discovery, and powers `--changed`.
+
+## An example row
+
+```
+id	module	scenario	preconditions	steps	data	expected	type	route	tags
+INV-004	invoice	Admin saves an invoice with a zero amount	Logged in as admin	Open /invoices/new | fill Amount | click Save	Amount: 0	An error says the amount must be greater than zero	page	/invoices/new	
+```
 
 ## What a feature needs
 
-For each feature, cover: the happy path (high/medium priority) · one
+For each feature, cover: the happy path (tag it `smoke` if it must always work) · one
 validation or boundary case per constrained field · role-negative access
 (usually generated) · the empty state · one error state (bad input, failed
 request).
@@ -94,9 +122,10 @@ type — not one per value. Expand exhaustively only under `--exhaustive`.
 
 ## Wording a case for a non-technical reader
 
-`what to do` reads like an instruction you'd hand a new hire, not a script:
-name the role, the page, and the actions in order, using the labels visible
-on screen ("click New", "fill Amount") rather than selectors or field
-names from the code. `what should happen` names the single outcome a person
-watching the screen would notice — a message, a redirect, a row appearing —
-not an internal state change nothing on screen reflects.
+**Test Case Steps** reads like an instruction you'd hand a new hire, not a
+script: name the page and the actions in order, using the labels visible on
+screen ("click New", "fill Amount") rather than selectors or field names from
+the code. Put who is logged in in **Preconditions**, not in the steps.
+**Expected Result** names the single outcome a person watching the screen would
+notice — a message, a redirect, a row appearing — not an internal state change
+nothing on screen reflects.

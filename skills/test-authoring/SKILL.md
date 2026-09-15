@@ -24,7 +24,7 @@ in `tests/.cache/state.csv`, never hand-edited. `tf.sh select` joins both transp
 human file, forget the other exists. **Never `cat` either file.** Query them:
 
 ```sh
-tf.sh select --status new --priority high --cols id,route,type --format plain
+tf.sh select --status "Not Run" --tag smoke --cols id,route,type --format plain
 tf.sh stats
 tf.sh next-id AUTH
 ```
@@ -47,13 +47,13 @@ contract: `references/api-contracts.md`.
 ## Schema
 
 ```
-id,area,who,what to do,what should happen,priority,status,notes
+Test Case ID,Module,Test Scenario,Test Description,Preconditions,Test Case Steps,Test Data,Expected Result,Actual Result,Status
 ```
 
 Plain English, not steps a script would understand. `who` is `nobody` /
 `normal user` / `admin` (or whatever the role is called). Aliases avoid
-CSV-quoting a multi-word column: `todo`/`do`/`steps`→"what to do",
-`expect`/`should`/`expected`→"what should happen", `role`→`who`,
+CSV-quoting a multi-word column: `id`, `module`, `scenario`, `description`, `preconditions`, `steps`,
+`data`, `expected`, `actual`, `status` -- and `role` for the hidden session column,
 `feature`→`area`. `id` is stable forever — never renumber. `status` starts
 `new`; the runner owns it after, rewriting it only when a verdict changed,
 so hand edits and git stay clean. Field detail, feature coverage, and
@@ -73,7 +73,7 @@ back the last version that did.
 ## Destructive cases, and before finishing
 
 Anything that deletes, cancels, deactivates, or acts in bulk gets
-`tags=destructive` (set with `tf.sh set`) and `status=skipped`. Runs only
+`tags=destructive` (set with `tf.sh set`) and `status=Skipped`. Runs only
 under `--allow-destructive` — write them, just don't arm them.
 
 `tf.sh prune` surfaces definition-identical duplicates, `tf.sh stats`

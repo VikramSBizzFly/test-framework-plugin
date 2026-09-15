@@ -9,9 +9,11 @@ Standard library only -- zipfile plus hand-written OOXML. No openpyxl, no pip,
 nothing added to the user's project. If this file needs a dependency, it is
 wrong.
 
-  export   cases.csv + flows.txt + results.csv  ->  workbook
-  import   workbook  ->  human CSV + a CSV of rows that are new
-  status   write verdicts back into the workbook, and roll flows up
+  export        cases.csv + flows.txt + results.csv  ->  workbook
+  import        workbook  ->  human CSV + a CSV of rows that are new
+  status        write verdicts back into the workbook, and roll flows up
+  bugs-export   bugs.csv  ->  bug-report.xlsx
+  bugs-import   bug-report.xlsx  ->  bugs.csv, keeping what people own
 
 Exit 0 on success, 1 on a real error. Callers treat a missing interpreter as
 "skip", never as failure.
@@ -29,24 +31,58 @@ NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 NS_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 NS_PKG_REL = "http://schemas.openxmlformats.org/package/2006/relationships"
 
-# Human columns come first and are the ones a person edits; reference columns
-# are generated and are ignored on the way back in.
-CASE_HUMAN = ["id", "area", "who", "what to do", "what should happen",
-              "priority", "status", "notes"]
-CASE_REF = ["route", "tags", "viewport", "last run", "last result", "evidence"]
-CASE_COLS = CASE_HUMAN + CASE_REF
+# The Test Cases sheet is exactly these columns, in this order: the QA team's
+# layout. Each has a short key, which is what the engine's joined CSV uses.
+CASE_FIELDS = [
+    ("Test Case ID", "id"), ("Module", "module"), ("Test Scenario", "scenario"),
+    ("Test Description", "description"), ("Preconditions", "preconditions"),
+    ("Test Case Steps", "steps"), ("Test Data", "data"),
+    ("Expected Result", "expected"), ("Actual Result", "actual"),
+    ("Status", "status"),
+]
+CASE_COLS = [label for label, _k in CASE_FIELDS]
+
+# A workbook written before 1.0 used these headers. Reading them keeps a
+# person's edits in an old sheet instead of mistaking every row for a new case.
+LEGACY_CASE_LABELS = {
+    "id": "Test Case ID", "area": "Module", "what to do": "Test Case Steps",
+    "what should happen": "Expected Result", "status": "Status",
+    "notes": "Test Description",
+}
 
 FLOW_COLS = ["id", "name", "actor", "trigger", "steps", "code path", "writes",
              "branches", "cases", "status", "last run"]
 RESULT_COLS = ["run", "id", "type", "role", "route", "expected", "actual",
                "verdict", "ms"]
 
-STATUS_VALUES = "new,passing,failing,flaky,skipped"
-PRIORITY_VALUES = "high,medium,low"
+STATUS_VALUES = "Not Run,Pass,Fail,Blocked,Flaky,Skipped"
+# Engine words from before 1.0, and verdicts, onto the QA words.
+STATUS_WORDS = {
+    "new": "Not Run", "not run": "Not Run", "": "Not Run",
+    "passing": "Pass", "pass": "Pass",
+    "failing": "Fail", "fail": "Fail",
+    "blocked": "Blocked", "error": "Blocked", "unjudged": "Blocked",
+    "flaky": "Flaky", "skipped": "Skipped", "skip": "Skipped",
+}
+
+BUG_COLS = ["Bug No", "Module", "Bug Description", "Steps to Reproduce",
+            "Expected Result", "Actual Result", "Test data", "Status(QA)",
+            "QA Comments", "Severity", "Priority", "Reporter", "Environment",
+            "Access Link", "Bug Link", "found date", "Dev Comment"]
+# bugs.csv carries one more, hidden column: the case a bug was raised from.
+BUG_STORE_COLS = BUG_COLS + ["case_id"]
+# What a person owns in the bug sheet. Everything else is regenerated from the
+# failing case, so a stale copy in the spreadsheet cannot overwrite it.
+BUG_PEOPLE_OWN = ["Status(QA)", "QA Comments", "Severity", "Priority",
+                  "Bug Link", "Dev Comment"]
+BUG_STATUS_VALUES = "Open,In Progress,Fixed,Retest,Reopened,Closed,Not a Bug"
+SEVERITY_VALUES = "Critical,High,Medium,Low"
+PRIORITY_VALUES = "High,Medium,Low"
 
 SHEET_CASES = "Test Cases"
 SHEET_FLOWS = "Flows"
 SHEET_RESULTS = "Results"
+SHEET_BUGS = "Bugs"
 
 # Style indices into cellXfs below. Keep in sync with _styles_xml().
 S_DEFAULT, S_HEADER, S_WRAP, S_PASS, S_FAIL, S_FLAKY, S_SKIP, S_MUTED = range(8)
@@ -54,24 +90,40 @@ S_DEFAULT, S_HEADER, S_WRAP, S_PASS, S_FAIL, S_FLAKY, S_SKIP, S_MUTED = range(8)
 STATUS_STYLE = {
     "passing": S_PASS, "pass": S_PASS,
     "failing": S_FAIL, "fail": S_FAIL, "error": S_FAIL,
-    "flaky": S_FLAKY,
+    "blocked": S_FLAKY, "flaky": S_FLAKY,
     "skipped": S_SKIP, "skip": S_SKIP,
     "not covered": S_SKIP,
 }
+BUG_STATUS_STYLE = {
+    "open": S_FAIL, "reopened": S_FAIL,
+    "in progress": S_FLAKY, "retest": S_FLAKY,
+    "fixed": S_PASS, "closed": S_PASS,
+    "not a bug": S_SKIP,
+}
+SEVERITY_STYLE = {"critical": S_FAIL, "high": S_FAIL, "medium": S_FLAKY,
+                  "low": S_SKIP}
 
 # Columns wide enough to read without dragging, and wrapped where the text is
 # a sentence rather than a token.
 WIDTHS = {
-    "id": 16, "area": 14, "who": 13, "what to do": 46,
-    "what should happen": 46, "priority": 9, "status": 11, "notes": 30,
-    "route": 22, "tags": 14, "viewport": 10, "last run": 17,
-    "last result": 11, "evidence": 26,
+    "Test Case ID": 16, "Module": 14, "Test Scenario": 34,
+    "Test Description": 40, "Preconditions": 28, "Test Case Steps": 50,
+    "Test Data": 24, "Expected Result": 40, "Actual Result": 40, "Status": 11,
+    "Bug No": 10, "Bug Description": 44, "Steps to Reproduce": 50,
+    "Test data": 24, "Status(QA)": 12, "QA Comments": 36, "Severity": 10,
+    "Priority": 9, "Reporter": 16, "Environment": 26, "Access Link": 34,
+    "Bug Link": 34, "found date": 12, "Dev Comment": 36,
+    "id": 16, "status": 11,
     "name": 22, "actor": 13, "trigger": 22, "steps": 46, "code path": 42,
-    "writes": 24, "branches": 34, "cases": 26,
-    "run": 17, "type": 8, "expected": 26, "actual": 26, "verdict": 10, "ms": 7,
+    "writes": 24, "branches": 34, "cases": 26, "last run": 17,
+    "run": 17, "type": 8, "role": 13, "route": 22, "expected": 26,
+    "actual": 26, "verdict": 10, "ms": 7,
 }
-WRAPPED = {"what to do", "what should happen", "notes", "steps", "code path",
-           "branches", "writes", "expected", "actual"}
+WRAPPED = {"Test Scenario", "Test Description", "Preconditions",
+           "Test Case Steps", "Test Data", "Expected Result", "Actual Result",
+           "Bug Description", "Steps to Reproduce", "Test data", "QA Comments",
+           "Environment", "Dev Comment",
+           "steps", "code path", "branches", "writes", "expected", "actual"}
 
 
 # ---------------------------------------------------------------- XML helpers
@@ -103,7 +155,9 @@ def _cell(ref, value, style):
             '</is></c>' % (ref, style, esc(value)))
 
 
-def _sheet_xml(columns, rows, status_col=None, validations=()):
+def _sheet_xml(columns, rows, styled=None, validations=()):
+    """styled: {column: {lowercased value: style}} for colour-coded columns."""
+    styled = styled or {}
     ncols = len(columns)
     nrows = len(rows) + 1
     last = "%s%d" % (col_letter(ncols), max(nrows, 1))
@@ -123,12 +177,10 @@ def _sheet_xml(columns, rows, status_col=None, validations=()):
         body.append('<row r="%d" spans="1:%d">' % (r, ncols))
         for i, name in enumerate(columns, 1):
             value = row.get(name, "")
-            if status_col and name == status_col:
-                style = STATUS_STYLE.get(str(value).strip().lower(), S_DEFAULT)
+            if name in styled:
+                style = styled[name].get(str(value).strip().lower(), S_DEFAULT)
             elif name in WRAPPED:
                 style = S_WRAP
-            elif name in CASE_REF:
-                style = S_MUTED
             else:
                 style = S_DEFAULT
             body.append(_cell("%s%d" % (col_letter(i), r), value, style))
@@ -208,7 +260,7 @@ def _styles_xml():
 
 
 def write_workbook(path, sheets):
-    """sheets: list of (name, columns, rows, status_col, validations)."""
+    """sheets: list of (name, columns, rows, styled, validations)."""
     names = [s[0] for s in sheets]
 
     content_types = [
@@ -256,9 +308,9 @@ def write_workbook(path, sheets):
         z.writestr("xl/workbook.xml", workbook)
         z.writestr("xl/_rels/workbook.xml.rels", "".join(rels))
         z.writestr("xl/styles.xml", _styles_xml())
-        for i, (_n, cols, rows, status_col, validations) in enumerate(sheets, 1):
+        for i, (_n, cols, rows, styled, validations) in enumerate(sheets, 1):
             z.writestr("xl/worksheets/sheet%d.xml" % i,
-                       _sheet_xml(cols, rows, status_col, validations))
+                       _sheet_xml(cols, rows, styled, validations))
     os.replace(tmp, path)
 
 
@@ -378,17 +430,28 @@ def read_flows(path):
     return rows
 
 
+def qa_status(value):
+    return STATUS_WORDS.get((value or "").strip().lower(), (value or "").strip())
+
+
+def field(row, label, key):
+    """A case value, whether the engine's CSV names the column by its visible
+    label (1.0) or by its short key."""
+    value = row.get(label)
+    if value is None:
+        value = row.get(key, "")
+    return value or ""
+
+
 def case_rows(cases):
-    """Map a joined CSV row onto the sheet's columns."""
+    """Map a joined CSV row (short keys) onto the sheet's columns. The run
+    details ride along under keys the sheet does not show."""
     rows = []
     for c in cases:
-        row = {k: c.get(k, "") for k in CASE_HUMAN}
-        row["route"] = c.get("route", "")
-        row["tags"] = c.get("tags", "")
-        row["viewport"] = c.get("viewport", "")
-        row["last run"] = c.get("last_run", "")
-        row["last result"] = c.get("last_result", "")
-        row["evidence"] = c.get("evidence", "")
+        row = {label: field(c, label, key) for label, key in CASE_FIELDS}
+        row["Status"] = qa_status(row["Status"])
+        row["_id"] = field(c, "Test Case ID", "id")
+        row["_last_run"] = c.get("last_run", "")
         rows.append(row)
     return rows
 
@@ -399,23 +462,23 @@ def roll_up(flow, by_id):
     ids = [i for i in ids if i in by_id]
     if not ids:
         return "not covered"
-    states = [(by_id[i].get("status") or "").strip().lower() for i in ids]
-    if any(s == "failing" for s in states):
+    states = [qa_status(by_id[i].get("Status")) for i in ids]
+    if "Fail" in states:
         return "failing"
-    if any(s == "flaky" for s in states):
+    if "Flaky" in states:
         return "flaky"
-    if all(s == "passing" for s in states):
+    if all(s == "Pass" for s in states):
         return "passing"
-    if all(s == "skipped" for s in states):
+    if all(s == "Skipped" for s in states):
         return "skipped"
-    if all(s in ("new", "") for s in states):
+    if all(s == "Not Run" for s in states):
         return "not run"
     return "partial"
 
 
 def build_sheets(cases, flows, results, prev_flows=None):
     crows = case_rows(cases)
-    by_id = {r["id"]: r for r in crows if r.get("id")}
+    by_id = {r["_id"]: r for r in crows if r.get("_id")}
 
     frows = []
     prev = {f.get("id"): f for f in (prev_flows or [])}
@@ -425,8 +488,8 @@ def build_sheets(cases, flows, results, prev_flows=None):
         row["last run"] = ""
         for i in re.split(r"[,\s]+", f.get("cases", "")):
             i = i.strip()
-            if i in by_id and by_id[i].get("last run"):
-                row["last run"] = max(row["last run"], by_id[i]["last run"])
+            if i in by_id and by_id[i].get("_last_run"):
+                row["last run"] = max(row["last run"], by_id[i]["_last_run"])
         if not row["last run"] and f.get("id") in prev:
             row["last run"] = prev[f["id"]].get("last run", "")
         frows.append(row)
@@ -442,10 +505,10 @@ def build_sheets(cases, flows, results, prev_flows=None):
         })
 
     return [
-        (SHEET_FLOWS, FLOW_COLS, frows, "status", ()),
-        (SHEET_CASES, CASE_COLS, crows, "status",
-         (("status", STATUS_VALUES), ("priority", PRIORITY_VALUES))),
-        (SHEET_RESULTS, RESULT_COLS, rrows, "verdict", ()),
+        (SHEET_FLOWS, FLOW_COLS, frows, {"status": STATUS_STYLE}, ()),
+        (SHEET_CASES, CASE_COLS, crows, {"Status": STATUS_STYLE},
+         (("Status", STATUS_VALUES),)),
+        (SHEET_RESULTS, RESULT_COLS, rrows, {"verdict": STATUS_STYLE}, ()),
     ]
 
 
@@ -504,6 +567,33 @@ def one_line(value):
     return " | ".join(p.strip() for p in lines if p.strip())
 
 
+def clean_case(row):
+    out = {c: one_line(row.get(c)) for c in CASE_COLS}
+    out["Status"] = qa_status(out["Status"])
+    return out
+
+
+def legacy_case_row(row):
+    """A row from a pre-1.0 sheet, under the current labels."""
+    if "Test Case ID" in row or "id" not in row:
+        return row
+    out = {new: row.get(old, "") for old, new in LEGACY_CASE_LABELS.items()}
+    who = (row.get("who") or "").strip()
+    if who:
+        out["Preconditions"] = ("Not logged in" if who in ("nobody", "anonymous")
+                                else "Logged in as %s" % who)
+    return out
+
+
+def write_csv(path, columns, rows):
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=columns, lineterminator="\n",
+                           extrasaction="ignore")
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+
+
 def cmd_import():
     """Workbook -> the human CSV the engine reads, plus the rows that are new.
 
@@ -514,9 +604,14 @@ def cmd_import():
     xlsx = arg("xlsx")
     out_human = arg("out-human")
     out_new = arg("out-new")
-    known = {c.get("id"): c for c in read_csv(arg("cases")) if c.get("id")}
+    # The engine's joined CSV uses short keys; re-key it by the sheet labels.
+    known = {}
+    for c in read_csv(arg("cases")):
+        cid = field(c, "Test Case ID", "id")
+        if cid:
+            known[cid] = {label: field(c, label, key) for label, key in CASE_FIELDS}
 
-    sheet = read_workbook(xlsx).get(SHEET_CASES, [])
+    sheet = [legacy_case_row(r) for r in read_workbook(xlsx).get(SHEET_CASES, [])]
     if not sheet:
         print("xlsx: nothing to import", file=sys.stderr)
         return 0
@@ -530,36 +625,28 @@ def cmd_import():
                                          int(m.group(2)))
 
     for row in sheet:
-        cid = (row.get("id") or "").strip()
+        cid = (row.get("Test Case ID") or "").strip()
         if not cid:
-            area = (row.get("area") or "new").strip().upper()
+            area = (row.get("Module") or "new").strip().upper()
             prefix = re.sub(r"[^A-Z0-9]", "", area)[:4] or "CASE"
             prefix_max[prefix] = prefix_max.get(prefix, 0) + 1
             cid = "%s-%03d" % (prefix, prefix_max[prefix])
-            row = dict(row, id=cid)
+            row = dict(row)
+            row["Test Case ID"] = cid
             new_rows.append(row)
         elif cid not in known:
             new_rows.append(row)
         seen.add(cid)
-        rows.append({k: one_line(row.get(k)) for k in CASE_HUMAN})
+        rows.append(clean_case(row))
 
     # A row deleted from the sheet stays in the suite, as promised above. The
     # engine also refuses an import that would shrink the store.
     missing = [i for i in known if i not in seen]
     for cid in missing:
-        rows.append({k: one_line(known[cid].get(k)) for k in CASE_HUMAN})
+        rows.append(clean_case(known[cid]))
 
-    with open(out_human, "w", encoding="utf-8", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=CASE_HUMAN, lineterminator="\n")
-        w.writeheader()
-        for r in rows:
-            w.writerow(r)
-
-    with open(out_new, "w", encoding="utf-8", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=CASE_HUMAN, lineterminator="\n")
-        w.writeheader()
-        for r in new_rows:
-            w.writerow({k: one_line(r.get(k)) for k in CASE_HUMAN})
+    write_csv(out_human, CASE_COLS, rows)
+    write_csv(out_new, CASE_COLS, [clean_case(r) for r in new_rows])
 
     print("xlsx: imported %d cases (%d new)" % (len(rows), len(new_rows)))
     if missing:
@@ -591,13 +678,103 @@ def cmd_status():
     return 0
 
 
+# ---------------------------------------------------------------- bug report
+
+def bug_sheet(bugs):
+    """The one sheet of tests/bug-report.xlsx. case_id stays in the store."""
+    rows = [{c: one_line(b.get(c)) for c in BUG_COLS} for b in bugs]
+    return [(SHEET_BUGS, BUG_COLS, rows,
+             {"Status(QA)": BUG_STATUS_STYLE, "Severity": SEVERITY_STYLE},
+             (("Status(QA)", BUG_STATUS_VALUES), ("Severity", SEVERITY_VALUES),
+              ("Priority", PRIORITY_VALUES)))]
+
+
+def cmd_bugs_export():
+    xlsx = arg("xlsx")
+    bugs = read_csv(arg("bugs"))
+    sheets = bug_sheet(bugs)
+    if same_content(xlsx, sheets):
+        print("xlsx: bug report unchanged")
+        return 0
+    write_workbook(xlsx, sheets)
+    open_n = sum(1 for b in bugs
+                 if (b.get("Status(QA)") or "") not in ("Closed", "Not a Bug", "Fixed"))
+    print("xlsx: %s (%d bugs, %d open)" % (xlsx, len(bugs), open_n))
+    return 0
+
+
+def cmd_bugs_import():
+    """bug-report.xlsx -> bugs.csv.
+
+    A person owns six columns: Status(QA), QA Comments, Severity, Priority,
+    Bug Link and Dev Comment. Those come from the sheet. Everything else was
+    filled from the failing case and is kept from the store, so a stale copy in
+    a spreadsheet cannot overwrite it. A row typed into the sheet with no Bug No
+    is a bug a person raised by hand: it gets the next number and every column.
+    """
+    xlsx = arg("xlsx")
+    out = arg("out")
+    store = read_csv(arg("bugs"))
+    by_no = {b.get("Bug No"): b for b in store if b.get("Bug No")}
+
+    sheet = read_workbook(xlsx).get(SHEET_BUGS, [])
+    if not sheet:
+        print("xlsx: no bug report to import", file=sys.stderr)
+        write_csv(out, BUG_STORE_COLS, store)
+        return 0
+
+    top = 0
+    for no in by_no:
+        m = re.match(r"^BUG-(\d+)$", no or "")
+        if m:
+            top = max(top, int(m.group(1)))
+
+    merged, seen, added = [], set(), 0
+    for row in sheet:
+        no = (row.get("Bug No") or "").strip()
+        if no and no in by_no:
+            b = dict(by_no[no])
+            for col in BUG_PEOPLE_OWN:
+                if col in row:
+                    b[col] = one_line(row.get(col))
+            merged.append(b)
+            seen.add(no)
+        elif not no:
+            if not any((row.get(c) or "").strip() for c in BUG_COLS):
+                continue
+            top += 1
+            b = {c: one_line(row.get(c)) for c in BUG_COLS}
+            b["Bug No"] = "BUG-%03d" % top
+            b["Status(QA)"] = b.get("Status(QA)") or "Open"
+            b["found date"] = b.get("found date") or datetime.date.today().isoformat()
+            b["case_id"] = ""
+            merged.append(b)
+            added += 1
+        else:
+            print("xlsx: %s is in the sheet but not the store -- ignored" % no,
+                  file=sys.stderr)
+
+    # A bug deleted from the sheet stays: deleting a bug report by deleting a
+    # spreadsheet row is not something to do silently.
+    kept = [b for no, b in by_no.items() if no not in seen]
+    merged.extend(kept)
+
+    write_csv(out, BUG_STORE_COLS, merged)
+    print("xlsx: imported %d bugs (%d new by hand)" % (len(merged), added))
+    if kept:
+        print("xlsx: %d bug(s) missing from the sheet were kept" % len(kept),
+              file=sys.stderr)
+    return 0
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__, file=sys.stderr)
         return 1
     try:
         return {"export": cmd_export, "import": cmd_import,
-                "status": cmd_status}[sys.argv[1]]()
+                "status": cmd_status, "bugs-export": cmd_bugs_export,
+                "bugs-import": cmd_bugs_import}[sys.argv[1]]()
     except KeyError:
         print("tf-xlsx: unknown subcommand %r" % sys.argv[1], file=sys.stderr)
         return 1
