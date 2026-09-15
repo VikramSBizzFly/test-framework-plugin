@@ -9,6 +9,60 @@ version you have installed.
 of reviewed pull requests (#1-#6), split by area: the engine and workbook, the
 agents, the skills, plain-language activation, command wiring, and docs.
 
+## [0.4.0] - 2026-09-15
+
+### Added
+
+- **`run-api` sends real requests.** An `api` case now carries `method`, `body`
+  (inline or `@file`), `headers`, `expect_code` and `repeat`, so POST-only
+  endpoints, webhook signatures (`{{hmac-sha256:NAME}}`), brute-force lockouts
+  and sign-out can be tested. Secrets, cookies and environment values are
+  placeholders resolved at send time. `rbac` API rows now say `method=GET` and
+  `expect_code=refused`.
+- **UNJUDGED verdict.** A case `run-api` cannot judge — a non-GET case with no
+  `expect_code`, a `405` on a case with no `method`, a missing secret — is listed
+  apart with its reason instead of counted as a failure, and leaves `status`
+  alone. `summary --json` reports `unjudged`.
+- **`tf.sh check` and `tf.sh restore`.** `check` says whether the store parses,
+  with line numbers. `restore` puts back the newest backup that does, or
+  rebuilds from the workbook, keeping the damaged file aside.
+- **Store write guard.** A `PreToolUse` hook blocks Write/Edit and shell
+  redirects, `tee`, `sed -i`, `mv`/`cp` and Python opens that would rewrite
+  `testcases.csv` or `.cache/state.csv` directly.
+- `merge` accepts **tab-separated** input and `--check` for a dry run. The
+  authoring agents now write TSV.
+- `example/demo-app.py` has POST-only JSON, sign-out, signed-webhook and 2FA
+  lockout endpoints to try `run-api` on.
+
+### Changed
+
+- **`preflight` proves sessions instead of checking files exist.** It drops
+  expired cookies, sends one real request per role to `login.session_probe` (or
+  `roles.<role>.probe`, then `login.success_indicator`), compares it with a
+  logged-out request, logs a dead role in again once, and **exits 3** if any role
+  is still dead or the probe cannot tell. `--warn-only` keeps the old behaviour.
+- **Every store write is validated.** Field counts, header and unclosed quotes
+  are checked before a file replaces `testcases.csv` or `state.csv`; a write
+  that would drop rows is refused (except `prune --apply`); backups are kept in
+  `tests/.cache/backups/`. A damaged store stops every command with exit 3.
+- `merge` rejects a whole file on any malformed row, with its line number, and
+  builds both store files aside before replacing either.
+- `run-api`: an ERROR no longer marks a case `failing`; a sign-out or
+  `ends-session` case runs on a throwaway login; each request uses a copy of
+  the session.
+- `tf.sh` is split into modules under `scripts/lib/`. Same commands, same
+  output.
+
+### Fixed
+
+- `merge` put text containing a comma into the wrong columns (hand-written CSV
+  with unquoted commas was accepted), and a short row inherited values from the
+  row before it.
+- `run-api` sent a case written for `normal user` logged out: the display label
+  was used as the role key. Empty columns also shifted the fields after them.
+- `xlsx --import` split a record on a line break typed into a cell, and dropped
+  cases that were missing from the sheet despite saying it kept them.
+
 ## [0.3.0] - 2026-09-12
 
 ### Added

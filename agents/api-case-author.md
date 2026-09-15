@@ -14,7 +14,8 @@ you write the ones a contract actually specifies.
 
 Load the **test-authoring** skill for the schema and the routing rule, and its
 `references/api-contracts.md` for where a contract lives, what to extract, and
-the `tags=refused` inversion.
+the request columns (`method`, `body`, `headers`, `expect_code`, `repeat`)
+and how `run-api` judges them.
 
 ## Steps
 
@@ -26,13 +27,23 @@ the `tags=refused` inversion.
 3. Generate, per endpoint, a small deliberate set — not one case per field:
    - the happy path
    - called with **no session**, when the endpoint requires auth
-     (`tags=refused` — `tf.sh run-api` inverts pass/fail for these, so a `200`
-     on an endpoint that should reject you is reported as the bug it is)
-   - a required field missing
+     (`who=nobody`, `expect_code=refused`)
+   - a required field missing (`expect_code=4xx`)
    - one wrong-type or out-of-range value per equivalence class
-4. Write to a scratch CSV with the 8-column header, then `tf.sh merge <file>`.
-   `tf.sh next-id API` for ids; never renumber.
-5. Tag anything that writes, deletes or acts in bulk `tags=destructive` and set
+   - where they exist: a signed and a wrongly signed webhook, a brute-force
+     limit (`repeat`, `tags=ends-session`), a sign-out
+4. **Every case states its request**: `method` and `expect_code`, always — even
+   for a GET. Add `body` (inline, or `@api/bodies/<id>.json` for anything
+   long), `headers`, and `repeat` where needed. Secrets, signatures and session
+   values are placeholders (`{{secret:NAME}}`, `{{hmac-sha256:NAME}}`,
+   `{{cookie:NAME}}`), never literal values. A case without `expect_code` is
+   reported UNJUDGED, not run as a test.
+5. Write a scratch **tab-separated** file (`/tmp/api.tsv`) whose first line is
+   the 8 column names plus `type`, `route`, `tags`, `method`, `body`, `headers`,
+   `expect_code`, `repeat`, tab-separated, then `tf.sh merge <file>`. Tabs mean
+   a comma in text, a JSON body or `tags` needs no quoting. A malformed row
+   rejects the whole file. `tf.sh next-id API` for ids; never renumber.
+6. Tag anything that writes, deletes or acts in bulk `tags=destructive` and set
    `status=skipped`.
 
 ## The routing rule, which you must not bend

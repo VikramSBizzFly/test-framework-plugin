@@ -12,7 +12,7 @@ and is exactly two values.
 | Does clicking Save show the new row in the table? | `page` | browser |
 | Does the page render at 375px without breaking layout? | `page` | browser |
 | Does opening this URL as the wrong role show a login page or a refusal? | `page` | browser |
-| Does a bare `GET`/`POST` to `/api/...` return the right status/shape? | `api` | free |
+| Does a `GET`/`POST` to `/api/...` (with a body, headers, a signature) return the right status? | `api` | free |
 
 The old `ui`/`rbac`/`auth`/`visual`/`a11y`/`perf` type values are gone.
 Everything a person can navigate to and look at — including a permission
@@ -67,12 +67,16 @@ Bookkeeping file, `tests/.cache/state.csv` (never hand-edit; `tf.sh set`
 routes non-human fields here automatically):
 
 ```
-id,type,route,tags,source_files,spec_file,last_run,last_result,pass_streak,flake_count,viewport
+id,type,route,tags,source_files,spec_file,last_run,last_result,pass_streak,flake_count,viewport,method,body,headers,expect_code,repeat
 ```
 
+`method`, `body`, `headers`, `expect_code` and `repeat` describe the request an
+`api` case sends; see `api-contracts.md`. An older state file gains these
+columns, empty, the first time `tf.sh` touches it.
+
 `route` groups cases for browser page-model reuse, so get it right — a wrong
-route means a wasted page model. `tags` is comma-separated; `destructive`
-and `smoke` are load-bearing. `source_files` is semicolon-separated, from
+route means a wasted page model. `tags` is comma-separated; `destructive`,
+`smoke`, `refused` and `ends-session` are load-bearing. `source_files` is semicolon-separated, from
 discovery, and powers `--changed`.
 
 ## What a feature needs

@@ -1,6 +1,6 @@
 ---
 name: case-author
-description: Writes plain-English test cases for one feature into tests/testcases.csv, via a scratch CSV and tf.sh merge. Use during /test-run stage 2, one call per feature from the featuremap, after discovery has run.
+description: Writes plain-English test cases for one feature into tests/testcases.csv, via a scratch TSV and tf.sh merge. Use during /test-run stage 2, one call per feature from the featuremap, after discovery has run.
 tools: Read, Write, Bash
 model: sonnet
 ---
@@ -23,12 +23,18 @@ the page-vs-api decision table and the equivalence-class rules.
    `tests/.cache/pages/<route>.txt`, the flows at `tests/.cache/flows.txt`, and
    `tf.sh schemas <src>` for validation constraints. **Do not read whole source
    files**; a page model, a flow line and a schema dump are why they exist.
-3. Write new rows to a scratch CSV under `/tmp` with the exact 8-column header:
-   `id,area,who,what to do,what should happen,priority,status,notes`.
+3. Write new rows to a scratch **tab-separated** file under `/tmp` (`new.tsv`)
+   with the 8 column names, tab-separated, as its first line:
+   `id`, `area`, `who`, `what to do`, `what should happen`, `priority`,
+   `status`, `notes`. Tabs, not commas: text like "open Invoices, click New"
+   then needs no quoting. Every row has every column, even an empty `notes`,
+   and no field contains a tab or a line break.
    Plain English, not script steps. `who` is `nobody` / `normal user` / `admin`
    (or the project's own role names). `status` starts `new`.
 4. `tf.sh merge <file>` — merge keeps existing ids and never overwrites a
-   `status` or `notes` a human set, so this is always safe to re-run.
+   `status` or `notes` a human set, so this is always safe to re-run. A
+   malformed row rejects the whole file with its line number; fix that line
+   and merge again. Never write `testcases.csv` or `state.csv` yourself.
 5. Mark anything that deletes, cancels, deactivates or acts in bulk:
    `tf.sh set <id> tags=destructive status=skipped`. Write them; do not arm them.
 6. `tf.sh prune` to surface definition-identical duplicates, `tf.sh stats` to

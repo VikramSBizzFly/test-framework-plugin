@@ -18,10 +18,10 @@ always an explicit `--all`.
 `tf.sh preflight`. If it is down, stop and say so. A dead app should cost one
 request, not a suite of failures.
 
-Then confirm each role still has a session — both `tests/.auth/<role>.cookies`
-and `tests/.auth/<role>.json`. Sessions expire; if one has, hand that role to
-the `login-broker` agent now rather than discovering it forty cases later. A
-role whose storage state is missing makes every browser case "pass".
+Preflight also proves each role's session with one real request, logging a
+dead role in again when it can. Exit 3 names the roles it could not revive:
+hand those to the `login-broker` agent now rather than discovering it forty
+cases later. A role that runs logged out makes every permission case "pass".
 
 ## 2. Write or refresh the tests
 
