@@ -73,11 +73,25 @@ with JavaScript, or a broken page that says "Access denied" while still answerin
 
 Everything lands in **`tests/testcases.xlsx`** — open it in Excel. Three tabs:
 **Flows** (what your software actually does, step by step, and whether anything
-tests it), **Test Cases** (every check, in plain English, with its status), and
-**Results** (how the last run went).
+tests it), **Test Cases** (every check, with its status), and **Results** (how
+the last run went).
 
-You can edit it. Change a status, write a note, or type a new row and leave the
-id blank — the next run picks your changes up and keeps them.
+The Test Cases tab uses the columns a QA team works in: Test Case ID, Module,
+Test Scenario, Test Description, Preconditions, Test Case Steps, Test Data,
+Expected Result, Actual Result, and Status. **Status** is one of *Not Run*,
+*Pass*, *Fail*, *Blocked* (it couldn't be checked — usually the app wasn't
+answering), *Flaky* or *Skipped*. **Actual Result** is filled in for you: it's
+what the check really saw.
+
+When a check fails because of a **real bug in your app**, it's also written into
+**`tests/bug-report.xlsx`** — with the steps, what should and did happen, a
+severity, and a link to the page. A failure caused by an out-of-date test or a
+server that was down is *not* recorded as a bug. Run it again and the same bug
+is updated, not copied.
+
+You can edit both. In Test Cases, change anything or type a new row and leave
+the id blank. In the bug report, fill in the Status(QA), Bug Link and Dev
+Comment columns as the bug moves along — the next run keeps your changes.
 
 ---
 
@@ -160,7 +174,7 @@ it everything still works — your tests just stay in `tests/testcases.csv`.
 | `/test-report` | Show the last result again |
 | `/test-report --coverage` | Show what has no tests |
 | `/test-report --flakes` | Show the tests that keep changing their mind |
-| `/test-report --bug AUTH-003` | Turn a failure into a bug report |
+| `/test-report --bug AUTH-003` | Write a failure into the bug report |
 | `/test-report --publish` | Put the last result on a page you can share |
 
 **How much to run.** Pick one; it uses `--changed` if you say nothing:

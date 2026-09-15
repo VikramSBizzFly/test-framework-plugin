@@ -25,18 +25,18 @@ the page-vs-api decision table and the equivalence-class rules.
    files**; a page model, a flow line and a schema dump are why they exist.
 3. Write new rows to a scratch **tab-separated** file under `/tmp` (`new.tsv`)
    with the 8 column names, tab-separated, as its first line:
-   `id`, `area`, `who`, `what to do`, `what should happen`, `priority`,
+   `id`, `module`, `scenario`, `description`, `preconditions`, `steps`, `data`, `expected`,
    `status`, `notes`. Tabs, not commas: text like "open Invoices, click New"
    then needs no quoting. Every row has every column, even an empty `notes`,
    and no field contains a tab or a line break.
    Plain English, not script steps. `who` is `nobody` / `normal user` / `admin`
-   (or the project's own role names). `status` starts `new`.
+   (or the project's own role names). Leave `actual` and `status` empty -- the runner owns both.
 4. `tf.sh merge <file>` — merge keeps existing ids and never overwrites a
    `status` or `notes` a human set, so this is always safe to re-run. A
    malformed row rejects the whole file with its line number; fix that line
    and merge again. Never write `testcases.csv` or `state.csv` yourself.
 5. Mark anything that deletes, cancels, deactivates or acts in bulk:
-   `tf.sh set <id> tags=destructive status=skipped`. Write them; do not arm them.
+   `tf.sh set <id> tags=destructive status=Skipped`. Write them; do not arm them.
 6. `tf.sh prune` to surface definition-identical duplicates, `tf.sh stats` to
    confirm the mix.
 

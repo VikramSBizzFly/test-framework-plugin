@@ -92,21 +92,21 @@ expect not-text cell:owner "Acme Corp"
 ## Compiling from the page model
 
 The page model gives you the element inventory and validation constraints;
-the case's `what to do`/`what should happen` columns give you the scenario.
+the case's **Preconditions**, **Test Case Steps**, **Test Data** and **Expected Result** give you the scenario.
 Translate mechanically:
 
-- a `what to do` cell like `Fill Email | Fill Password | Click Sign in`
+- a **Test Case Steps** cell like `Fill Email | Fill Password | Click Sign in`
   becomes one `fill`/`click` line per segment, in order
 - a field's boundary constraint (`minlen=8`, `required`, `type=email`) is
   what justifies a boundary case's `fill` value — pull the value from the
   case row, not from the page model; the model only tells you *which*
   constraint is being tested
-- `what should happen` becomes the trailing `expect` line(s); pick
+- **Expected Result** becomes the trailing `expect` line(s); pick
   `expect url` for navigation, `expect text`/`expect not-text` for a
   message or its absence, `expect visible`/`expect absent` for an element
   appearing or disappearing, `expect any-of` when the case only says "should
   not open" without naming the app's specific refusal mechanism
 
-If `what to do`/`what should happen` can't be mapped onto the model's
-element inventory at all, do not guess — leave the case `status=new` and
+If the steps or the expected result can't be mapped onto the model's
+element inventory at all, do not guess — leave the case `status=Not Run` and
 note why.

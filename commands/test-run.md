@@ -9,7 +9,7 @@ Run the tests. Arguments: `$ARGUMENTS`
 Flags: `--changed` `--all` `--feature <area>` `--only-failing` `--headed`
 `--fresh` `--allow-destructive` `--crawl` `--a11y` `--security` `--responsive`.
 
-**Bare `/test-run` means `--changed`**, falling back to high-priority cases when
+**Bare `/test-run` means `--changed`**, falling back to `smoke`-tagged cases when
 nothing has changed. A full browser run takes minutes, so the whole suite is
 always an explicit `--all`.
 
@@ -105,6 +105,9 @@ step leaves `test-runner` with nothing to replay.
 4. **Failures only** get further attention: the `test-triager` agent, one
    failing case per call, per **test-triage**. A `tags=visual` diff goes to
    `visual-reviewer` instead. A passing case is never re-examined.
+   **Every case triaged `app-bug` then goes to the `bug-reporter` agent**, which
+   records it in `tests/bug-report.xlsx`. `stale-test`, `environment` and
+   `flake` are not recorded as bugs.
 5. **Promote, at Tier >= 1.** Hand the ids that just passed in the browser to
    the `spec-writer` agent. It writes native specs in the project's own
    language, and those re-run for zero tokens from then on. At Tier 0 skip

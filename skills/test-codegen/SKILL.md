@@ -46,5 +46,5 @@ that one — a Python project must never see the Java rules, and vice versa.
 ## Output
 
 Write under `tests/framework.json.spec_dir`, one file per feature, and
-`tf.sh set <id> status=passing spec_file=<path>` for every case promoted.
+`tf.sh set <id> status=Pass spec_file=<path>` for every case promoted.
 Codegen reads recipes; it never edits a case's `steps`/`expected` columns.

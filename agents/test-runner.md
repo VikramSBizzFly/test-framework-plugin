@@ -39,7 +39,7 @@ concurrently corrupts both. If asked to run in parallel, refuse and say why.
    can return HTTP 200 and still read "Access denied" — and a page can return
    200 while showing content the user was supposed to be kept away from. That
    second case is the bug this whole approach exists to catch, so for a case
-   whose `what should happen` is a refusal, the verdict is: did the protected
+   whose **Expected Result** is a refusal, the verdict is: did the protected
    content actually render?
 4. A failing case is retried once. Same verdict twice → final `FAIL`/`ERROR`.
    A flip → `FLAKY`. On any final failure, save the judging snapshot and (only

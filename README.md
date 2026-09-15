@@ -30,7 +30,7 @@ New here? **[TRY-IT.md](TRY-IT.md)** walks through it in plain language.
 /test-report                show the last result again
 /test-report --coverage     what has no tests
 /test-report --flakes       cases that flip verdict without a code change
-/test-report --bug <id>     turn a failure into a bug report
+/test-report --bug <id>     record a failure in tests/bug-report.xlsx
 /test-report --publish      the last result as a shareable page
 ```
 
@@ -86,46 +86,61 @@ installed, prints nothing on prompts that don't match, and never blocks a
 prompt. To switch it off, disable the plugin's hooks in `/config`, or delete
 `hooks/hooks.json` from the installed copy.
 
-## The workbook
+## The workbooks
 
-`tests/testcases.xlsx` is where everything lives, and it is the only file you
-open. Three sheets:
+Everything lives in two Excel files under `tests/`. They are the only files you
+open.
+
+**`tests/testcases.xlsx`** — three sheets:
 
 | Sheet | What's in it |
 | --- | --- |
 | **Flows** | what the software actually does, end to end: the journey, the code path behind it, what it writes, how it can fail, and which cases cover it |
-| **Test Cases** | 8 plain-English columns, plus the live status of each case |
+| **Test Cases** | every case, in the columns a QA team works in |
 | **Results** | the last run, case by case |
 
-```
-id,area,who,what to do,what should happen,priority,status,notes
-```
+The **Test Cases** sheet has exactly these ten columns:
 
-```
-AUTH-002,admin,nobody,Open /admin without logging in,Should not open - sends me to the login page,high,new,
-PERM-USER-002,payroll,normal user,Log in as normal user and open /payroll,Should not open - I am not allowed to see this,high,new,
-```
+| Test Case ID | Module | Test Scenario | Test Description | Preconditions | Test Case Steps | Test Data | Expected Result | Actual Result | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| AUTH-002 | payroll | Logged-out visitor opens /payroll | | Not logged in | Open /payroll | | Sends me to the login page | HTTP 200, payroll rendered | Fail |
+| PERM-USER-001 | payroll | A normal user opens /payroll | | Logged in as normal user | Open /payroll | | Refused | | Not Run |
 
-`who` is `nobody`, `normal user`, or `admin`. `priority` is `high`/`medium`/`low`.
-`status` is `new`/`passing`/`failing`/`flaky`/`skipped`. A case goes `flaky` only
-after it flips verdict three times with no matching source change; flaky cases
-are listed separately and do not set the verdict.
+**Status** is `Not Run`, `Pass`, `Fail`, `Blocked` (the run could not judge it —
+the app never answered), `Flaky` or `Skipped`. A case goes `Flaky` only after it
+flips verdict three times with no matching source change; flaky cases are listed
+separately and do not set the verdict. **Preconditions** is plain words, and the
+engine reads the login part of it: "Not logged in" runs without a session,
+"Logged in as admin" runs as admin.
 
-**The plugin keeps it up to date.** After every run each case gets its verdict,
-timestamp and evidence path written back, and each flow's status is rolled up
-from the cases covering it — `passing` only if they all passed, and **`not
-covered`** when nothing tests it at all. That last value is the most useful
-column in the file. A verdict that didn't change rewrites nothing, so your git
-history stays clean.
+**`tests/bug-report.xlsx`** — one **Bugs** sheet, in the team's bug-sheet columns:
+Bug No, Module, Bug Description, Steps to Reproduce, Expected Result, Actual
+Result, Test data, Status(QA), QA Comments, Severity, Priority, Reporter,
+Environment, Access Link, Bug Link, found date, Dev Comment.
 
-**You can edit it.** Change a status, add a note, type a new row and leave the
-id blank — the next run reads your edits back in first, and a hand edit always
-wins. Nothing you write is deleted by a regeneration.
+A bug is recorded **only when triage calls a failure a real app bug** — never
+for an out-of-date test, a server that was down, or a case that flips on its
+own. The plugin fills in everything it can look up (the steps, what should and
+did happen, who reported it, where, the link, the date) and supplies a
+description, severity and priority. A second failure updates the same bug
+instead of duplicating it, and a Closed bug that fails again is Reopened.
 
-Underneath, the engine reads a CSV copy in `tests/.cache/` — awk can't read a
-ZIP of XML. You never touch it. Writing the workbook needs Python on your
-machine; without it the framework falls back to a plain `tests/testcases.csv`
-and says so.
+**The plugin keeps both up to date.** After every run each case gets its
+verdict and what actually happened written back, and each flow's status is
+rolled up from the cases covering it — `passing` only if they all passed, and
+**`not covered`** when nothing tests it at all. The run ends by naming any open
+bug whose case now passes, so you know what to retest. A verdict that didn't
+change rewrites nothing, so your git history stays clean.
+
+**You can edit both.** In Test Cases, change anything, add a row and leave the
+id blank — the next run reads it back in, and a hand edit always wins. In the
+bug report you own Status(QA), QA Comments, Severity, Priority, Bug Link and Dev
+Comment; the rest is regenerated from the case, so a stale copy can't overwrite
+it. Nothing you write is deleted by a regeneration.
+
+Underneath, the engine reads CSV copies in `tests/.cache/` — awk can't read a
+ZIP of XML. You never touch them. Writing the workbooks needs Python on your
+machine; without it the framework falls back to plain CSV and says so.
 
 ## What a run looks like
 
@@ -232,7 +247,7 @@ shared `core.sh`/`progress.sh`. Always call `tf.sh`; the modules are not
 commands.
 
 ```sh
-tf.sh select --status new --priority high --cols id,todo --format plain
+tf.sh select --status "Not Run" --tag smoke --cols id,steps --format plain
 tf.sh routes src/ > tests/.cache/routes.txt
 tf.sh run-api
 tf.sh storage-state admin   # cookie jar -> Playwright session

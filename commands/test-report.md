@@ -21,12 +21,18 @@ grouped by area and ranked by risk — behind a login, takes input, touches mone
 or personal data — capped at 20 lines. Print what it returns; do not re-list.
 
 **`--bug <id>`** → the `bug-reporter` agent. It reads `tests/evidence/<id>/` and
-`source_files` so the evidence never reaches this conversation, and returns a
-redacted report plus a ready `gh issue create`. Offer the command; let the user
-run it. **Never put a password in a bug report.**
+`source_files` so the evidence never reaches this conversation, records the bug
+in `tests/bug-report.xlsx` with `tf.sh bug from`, and returns a ready
+`gh issue create`. Offer the command; let the user run it. It declines a case
+triage called anything other than an app bug. **Never put a password in a bug
+report.**
+
+Whenever bugs exist, say how many are open and point at `tests/bug-report.xlsx`
+— `tf.sh bug list --status Open` has the rows. The run panel already names any
+open bug whose case now passes; that is the retest to suggest.
 
 **`--flakes`** → the `flake-analyst` agent: cases that flip verdict across runs
-with no matching source change, and the `tf.sh set <id> status=flaky` commands
+with no matching source change, and the `tf.sh set <id> status=Flaky` commands
 to quarantine them. It proposes; you apply only if the user says so.
 
 **`--publish`** → `tf.sh render`, then publish it as an Artifact — after

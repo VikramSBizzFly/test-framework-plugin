@@ -27,7 +27,7 @@ three — a Python project must not see the Java rules, and vice versa.
    test-id locators only, storage state loaded from `tests/.auth/<role>.json`,
    the case id stamped into the test name using that stack's convention,
    never a login, never a credential value written to disk.
-4. Run `tf.sh set <id> status=passing spec_file=<path>` for every case you
+4. Run `tf.sh set <id> status=Pass spec_file=<path>` for every case you
    promote.
 
 If a recipe is missing, or a step has no reasonable role/label/test-id

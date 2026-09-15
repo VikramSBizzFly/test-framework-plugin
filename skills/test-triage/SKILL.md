@@ -11,6 +11,14 @@ Delegate one failing case at a time to the `test-triager` agent; look across
 runs for instability with `flake-analyst`, and judge a `tags=visual` diff with
 `visual-reviewer`.
 
+**A verdict decides whether a bug is recorded.** Hand every case triaged
+`app-bug` to the `bug-reporter` agent, which writes it into
+`tests/bug-report.xlsx` with `tf.sh bug from`. `stale-test`, `environment` and
+`flake` never become bugs: an out-of-date test, a server that was down, and a
+case that flips on its own are not defects in the app, and recording them
+trains a team to stop reading the bug sheet. That is why a verdict needs the
+evidence below before it is assigned.
+
 A verdict without evidence is a guess. Every one of the four categories below
 requires something concrete before you assign it — "probably flaky" is not a
 diagnosis, it is how real bugs get waved away.
@@ -43,7 +51,7 @@ A case that flips PASS/FAIL across runs with no matching change in its
 (`flake_count` on the row), set:
 
 ```sh
-tf.sh set <id> status=flaky flake_count=<n>
+tf.sh set <id> status=Flaky flake_count=<n>
 ```
 
 `flaky` cases are excluded from the gating verdict but never dropped from the

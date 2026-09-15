@@ -9,6 +9,73 @@ version you have installed.
 of reviewed pull requests (#1-#6), split by area: the engine and workbook, the
 agents, the skills, plain-language activation, command wiring, and docs.
 
+## [1.0.0] - 2026-09-15
+
+A **major** release: the visible test case columns change. Under the rules in
+README's **Versioning**, a schema change is MAJOR even though existing suites
+migrate on their own and nothing needs to be done by hand.
+
+### Changed
+
+- **Test cases use the QA team's ten columns**: Test Case ID, Module, Test
+  Scenario, Test Description, Preconditions, Test Case Steps, Test Data,
+  Expected Result, Actual Result, Status. The old `area`, `who`, `what to do`,
+  `what should happen`, `priority` and `notes` columns are gone from the sheet.
+- **Status uses QA words**: `Not Run`, `Pass`, `Fail`, `Blocked`, `Flaky`,
+  `Skipped`. Any older spelling (`new`, `passing`, `skipped`, ...) written by an
+  older prompt is converted on the way in.
+- **Actual Result is written by the runner.** `run-api` records `HTTP 401`, the
+  browser runner one sentence of what it saw.
+- **An ERROR or UNJUDGED case becomes `Blocked`.** In 0.4 it left `status`
+  unchanged; that let a case that could not be judged keep reading `Pass` from
+  an earlier run. `Blocked` keeps it visibly out of both Pass and Fail.
+- `who` moved to a hidden state `role` column. It is still set from
+  Preconditions in plain words ("Logged in as admin") when authoring omits it.
+- `priority` is gone. A bare `/test-run` falls back to cases tagged `smoke`;
+  migration tags every former `high` case `smoke`.
+- `notes` became Test Description. Test Description and Actual Result join
+  Status as columns a re-merge never overwrites.
+- `stats` reports status, type and role. `prune` dedupes on Preconditions,
+  Steps and Expected Result.
+
+### Added
+
+- **`tests/bug-report.xlsx`** — a Bugs sheet in the team's columns: Bug No,
+  Module, Bug Description, Steps to Reproduce, Expected Result, Actual Result,
+  Test data, Status(QA), QA Comments, Severity, Priority, Reporter, Environment,
+  Access Link, Bug Link, found date, Dev Comment.
+- **A bug is recorded automatically when triage calls a failure an app bug** —
+  never for a stale test, an environment failure or a flake.
+- **`tf.sh bug from <case>`** fills everything that can be looked up (number,
+  module, steps, expected and actual, reporter from git, environment, access
+  link, date), so the agent supplies only a description, severity, priority and
+  reasoning. A second failure updates the bug instead of duplicating it; a
+  Closed or Fixed bug that fails again is Reopened; a bug marked Not a Bug is
+  left alone. `tf.sh bug set` and `tf.sh bug list` round it out.
+- A value containing a password or token from `credentials.json` is refused by
+  `tf.sh bug`.
+- On `xlsx --import` a person owns Status(QA), QA Comments, Severity, Priority,
+  Bug Link and Dev Comment; the rest is regenerated from the case. A row typed
+  into the sheet with no Bug No becomes a new bug.
+- The run panel ends with the open-bug count and names any open bug whose case
+  now passes — the retest to do next. It never changes the exit status, and
+  stays out of `--quiet` and `--json`.
+- `bugs.csv` has the case store's guarantees: validated writes, backups, the
+  integrity gate, `check`, `restore`, and the PreToolUse write guard.
+
+### Migration
+
+- **Automatic.** Any `tf.sh` call converts a 0.4 suite, and a 0.1-0.3 suite
+  chains through both converters in one call. Every id, status and note is
+  kept; the files replaced are left as `.old`, and for the oldest suites that
+  is still the original file rather than the 0.4 midpoint.
+
+### Fixed
+
+- `setmany` now resolves column aliases the way `set` always did.
+- `_tf_commit` validates a temp file against the store it is replacing, not
+  against a guess from the temp file's own name.
+
 ## [0.4.0] - 2026-09-15
 
 ### Added

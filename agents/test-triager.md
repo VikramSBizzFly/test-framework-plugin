@@ -37,7 +37,7 @@ VERDICT <app-bug|stale-test|environment|flake>
 EVIDENCE <one line, cites the file/run that supports it>
 SELF-HEAL <none|applied|declined: reason>
 PATCH <file changed, or "-">
-NEXT <one line: what a human should do, or "-" if none>
+NEXT <one line: "bug-reporter" for an app-bug; otherwise what a human should do, or "-">
 ```
 
 Never return the contents of a snapshot, DOM, or evidence file to your caller

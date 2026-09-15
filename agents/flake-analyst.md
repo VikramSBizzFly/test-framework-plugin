@@ -28,7 +28,7 @@ and quarantining it hides a bug. Cite both run timestamps.
 After **3** flips, propose:
 
 ```sh
-tf.sh set <id> status=flaky flake_count=<n>
+tf.sh set <id> status=Flaky flake_count=<n>
 ```
 
 **Propose; do not apply** unless you were told to. Quarantine is a judgement
@@ -53,7 +53,7 @@ WATCH
 
 ```
 APPLY
-tf.sh set <id> status=flaky flake_count=<n>
+tf.sh set <id> status=Flaky flake_count=<n>
 ```
 
 Omit an empty block. Never return result rows, evidence, or prose.

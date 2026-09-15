@@ -73,20 +73,20 @@ record is data pollution the next run will trip over.
 ## Retry-once and the circuit breaker
 
 A failing case is replayed exactly one more time before its verdict is
-final. Same verdict twice → `status=failing`. A flip (fail then pass, or
-vice versa) still lands `status=passing` on a final pass, but increment
+final. Same verdict twice → `status=Fail`. A flip (fail then pass, or
+vice versa) still lands `status=Pass` on a final pass, but increment
 `flake_count` and record the flip — do not silently keep the pass as if
 nothing happened.
 
 Abort the **whole batch** after 3 consecutive failures (across retries).
 A down app, a broken build, or a bad deploy must cost 3 cases, not the
-suite — report the abort point and mark the remainder `skipped`, not `failing`.
+suite — report the abort point and mark the remainder `Skipped`, not `Fail`.
 
 ## Session re-check, not just at the start
 
 A group failing on `expect url /login` (or every case in a group erroring
 "no session") is not proof the app broke — the role's storage state can go
 stale mid-run even though it was valid at group 1. Before marking a whole
-group `failing` on that symptom, re-run `tf.sh login <role>`, reload storage
+group `Fail` on that symptom, re-run `tf.sh login <role>`, reload storage
 state, and retry the group once. Only report the app as broken if the group
 still fails with a fresh session.

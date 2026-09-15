@@ -414,6 +414,12 @@ cmd_summary() {
   }
   ' "$res" | _tf_render "$ascii" "$usecolor"
 
+  # Open bugs are not a verdict on this run, so they sit under the panel rather
+  # than inside it -- and never change the exit status. Panel only: --quiet is
+  # promised as one line, and --json is parsed by CI, where a stray line of text
+  # would break the job rather than inform it.
+  [ "$want_json" = 0 ] && [ "$quiet" = 0 ] && _bug_summary_lines
+
   # Exit status, for CI gating. Recomputed rather than smuggled through the pipe.
   awk -F, 'NR>1 && NF>=7 && $7 != "UNJUDGED" {
              if ($7 != "PASS") { f++; if ($2 == "rbac" || $2 == "auth") s++ }

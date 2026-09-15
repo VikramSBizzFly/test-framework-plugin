@@ -58,7 +58,7 @@ method=POST expect_code=2xx`.
 Per endpoint, deliberately, not one per field:
 
 1. **Happy path** — valid input, `expect_code` of the documented success.
-2. **No session**, when the endpoint requires auth — `who=nobody`,
+2. **No session**, when the endpoint requires auth — `role=nobody`,
    `expect_code=refused`.
 3. **A required field missing** — `expect_code=4xx`.
 4. **One wrong-type or out-of-range value per equivalence class** — one below
@@ -92,4 +92,4 @@ in the skill, and `skills/test-security/SKILL.md` for why a status code cannot
 tell a refusal from a leak.
 
 Anything that writes, deletes or acts in bulk gets `tags=destructive` and
-`status=skipped`.
+`status=Skipped`.

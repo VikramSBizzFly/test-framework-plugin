@@ -158,9 +158,13 @@ cmd_set() {
   human=''; state=''
   for a in "$@"; do
     k="${a%%=*}"; k="$(alias_col "$k")"
+    v="${a#*=}"
+    # Any spelling of a status lands on the QA word, so `status=skipped` from an
+    # older prompt cannot put a second, lowercase status into the store.
+    [ "$k" = Status ] && v="$(qa_status "$v")"
     case " $HUMAN_COLS " in
-      *" $k "*) human="$human|$k=${a#*=}" ;;
-      *)        state="$state|$k=${a#*=}" ;;
+      *" $k "*) human="$human|$k=$v" ;;
+      *)        state="$state|$k=$v" ;;
     esac
   done
   if [ -n "$human" ]; then _tf_apply "$CSV" "$id" "$human" 0 || die "set: $id was not changed"; fi
@@ -225,7 +229,11 @@ cmd_setmany() {
     _rest="${_line#"$_out"}"
     for _kv in $_rest; do
       _k="${_kv%%=*}"; _v="${_kv#*=}"
-      _k="$(alias_col "$_k" | tr ' ' '\001')"
+      _k="$(alias_col "$_k")"
+      # Decode, normalise, re-encode: "Not Run" has a space, and a bare space
+      # here would split the value into a second, key-less token.
+      [ "$_k" = Status ] && _v="$(qa_status "$(printf '%s' "$_v" | tr '+' ' ')" | tr ' ' '+')"
+      _k="$(printf '%s' "$_k" | tr ' ' '\001')"
       _out="$_out $_k=$_v"
     done
     printf '%s\n' "$_out"

@@ -233,6 +233,31 @@ _bug_list() {
   ' "$BUGS"
 }
 
+# _bug_summary_lines -- printed under the run panel. How many bugs are still
+# open, and which of them look fixed: an open bug whose case now passes is the
+# one line a tester most wants to see after a run, because it is the retest they
+# should do next. Silent when there are no open bugs.
+_bug_summary_lines() {
+  [ -f "$BUGS" ] || return 0
+  _bs_open="$(_bug_open_count)"
+  [ "${_bs_open:-0}" -gt 0 ] || return 0
+  _bs_cases="$CACHE/.bug-cases.$$"
+  cmd_select --cols id,status --format plain > "$_bs_cases" 2>/dev/null || : > "$_bs_cases"
+  echo ""
+  printf '  %s open bug%s -> %s\n' "$_bs_open" "$([ "$_bs_open" = 1 ] || echo s)" "$BUG_XLSX"
+  awk -v cases="$_bs_cases" "$AWKLIB"'
+    BEGIN { while ((getline l < cases) > 0) { split(l, P, "\t"); ST[P[1]] = P[2] } }
+    NR == 1 { hdrmap($0, H); next }
+    $0 == "" { next }
+    {
+      csvsplit($0, F); s = F[H["Status(QA)"]]; c = F[H["case_id"]]
+      if (s == "Closed" || s == "Not a Bug" || s == "Fixed" || c == "") next
+      if (ST[c] == "Pass") printf "  %s may be fixed: %s now passes -- retest it\n", F[H["Bug No"]], c
+    }
+  ' "$BUGS"
+  rm -f "$_bs_cases"
+}
+
 # _bug_open_count -- used by the summary panel.
 _bug_open_count() {
   [ -f "$BUGS" ] || { echo 0; return 0; }
